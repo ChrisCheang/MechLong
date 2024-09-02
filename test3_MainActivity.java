@@ -19,14 +19,17 @@ import org.opencv.android.CameraBridgeViewBase;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
 
+import org.opencv.core.Core;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.Point;
 import org.opencv.core.Scalar;
+import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Vector;
 
 
 public class MainActivity extends CameraActivity {
@@ -88,18 +91,39 @@ public class MainActivity extends CameraActivity {
         public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {  // called every time new frame is available
             // do stuff here
 
-            Mat input_rgba = inputFrame.rgba();   // rgb version of camera input
+            Mat input_color = inputFrame.rgba();   // rgb version of camera input
             Mat input_gray = inputFrame.gray();   // greyscale version of camera input
 
-            MatOfPoint corners = new MatOfPoint();
-            Imgproc.goodFeaturesToTrack(input_gray, corners, 20, 0.01, 10, new Mat(), 3, false);
-            Point[] cornersArr = corners.toArray();
+            Imgproc.cvtColor(input_color, input_color, Imgproc.COLOR_RGB2HSV); // convertion to HSV for inRange
 
-            for (int i=0; i<corners.rows(); i++) {
-                Imgproc.circle(input_rgba, cornersArr[i], 10, new Scalar(0,255,0), 2);
+            Mat filtered = new Mat();
+            Mat blur = new Mat();
+            Mat edges = new Mat();
+            Mat lines = new Mat();
+
+            Scalar lowerColorBound = new Scalar(0, 0, 215); // HSV bounds - white is no saturation, max value, "singularity" hue
+            Scalar upperColorBound = new Scalar(179, 40, 255);  // H: 0-179, S: 0-255, V: 0-255
+
+
+            Core.inRange(input_color, lowerColorBound, upperColorBound, filtered);
+
+            // note on thresholding: threshold gives global boundary values, while adaptivethreshold infers boundaries against local colours
+
+            //Imgproc.GaussianBlur(filtered,blur,new Size(45,45),1,1);
+            Imgproc.medianBlur(filtered,blur,3);
+            Imgproc.Canny(blur,edges,300,600); // recommended low:high ratio 1:2 to 1:3, the higher they are the tighter the edge requirement
+            Imgproc.HoughLinesP(edges,lines,1, 3.14159/180,50,20, 50);
+
+            // note: look into findCountours, which selects the contour with the largest area, which is hopefully the table
+
+            //Mat result = input_rgba.getInstance().getImage().clone();
+
+            for (int i = 0; i < lines.cols(); i++) {
+                double[] val = lines.get(0, i);
+                Imgproc.line(edges, new Point(val[0], val[1]), new Point(val[2], val[3]), new Scalar(255, 0, 0), 10);
             }
 
-            return input_rgba;  // returns input frame to the screen display
+            return edges;  // returns input frame to the screen display
         }
     };
 
