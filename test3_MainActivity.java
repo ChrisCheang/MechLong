@@ -94,18 +94,19 @@ public class MainActivity extends CameraActivity {
             Mat input_color = inputFrame.rgba();   // rgb version of camera input
             Mat input_gray = inputFrame.gray();   // greyscale version of camera input
 
-            Imgproc.cvtColor(input_color, input_color, Imgproc.COLOR_RGB2HSV); // convertion to HSV for inRange
-
+            Mat hsv = new Mat();
             Mat filtered = new Mat();
             Mat blur = new Mat();
             Mat edges = new Mat();
             Mat lines = new Mat();
 
-            Scalar lowerColorBound = new Scalar(0, 0, 215); // HSV bounds - white is no saturation, max value, "singularity" hue
-            Scalar upperColorBound = new Scalar(179, 40, 255);  // H: 0-179, S: 0-255, V: 0-255
+            Imgproc.cvtColor(input_color, hsv, Imgproc.COLOR_BGR2HSV); // convertion to HSV for inRange
 
+            // table blue (tentative): 80-120, 0-120, 100-170 (tested on screen-displayed image, not reliable but as a reference)
+            Scalar lowerColorBound = new Scalar(80, 0, 100); // HSV bounds - white is no saturation, max value, "singularity" hue
+            Scalar upperColorBound = new Scalar(120, 120, 170);  // H: 0-179, S: 0-255, V: 0-255
 
-            Core.inRange(input_color, lowerColorBound, upperColorBound, filtered);
+            Core.inRange(hsv, lowerColorBound, upperColorBound, filtered);
 
             // note on thresholding: threshold gives global boundary values, while adaptivethreshold infers boundaries against local colours
 
@@ -122,6 +123,9 @@ public class MainActivity extends CameraActivity {
                 double[] val = lines.get(0, i);
                 Imgproc.line(edges, new Point(val[0], val[1]), new Point(val[2], val[3]), new Scalar(255, 0, 0), 10);
             }
+
+            Size size = input_color.size();
+            Log.d(LOGTAG, String.valueOf(size.height));
 
             return edges;  // returns input frame to the screen display
         }
