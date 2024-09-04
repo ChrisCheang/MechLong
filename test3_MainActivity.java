@@ -1,5 +1,8 @@
 package com.example.test3;
 
+import static org.opencv.calib3d.Calib3d.decomposeProjectionMatrix;
+import static org.opencv.imgproc.Imgproc.getPerspectiveTransform;
+
 import android.os.Bundle;
 import android.util.Log;
 import android.util.Pair;
@@ -22,11 +25,13 @@ import org.opencv.android.OpenCVLoader;
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
+import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Vector;
@@ -100,11 +105,11 @@ public class MainActivity extends CameraActivity {
             Mat edges = new Mat();
             Mat lines = new Mat();
 
-            Imgproc.cvtColor(input_color, hsv, Imgproc.COLOR_BGR2HSV); // convertion to HSV for inRange
+            Imgproc.cvtColor(input_color, hsv, Imgproc.COLOR_RGB2HSV); // convertion to HSV for inRange
 
             // table blue (tentative): 80-120, 0-120, 100-170 (tested on screen-displayed image, not reliable but as a reference)
             Scalar lowerColorBound = new Scalar(80, 0, 100); // HSV bounds - white is no saturation, max value, "singularity" hue
-            Scalar upperColorBound = new Scalar(120, 120, 170);  // H: 0-179, S: 0-255, V: 0-255
+            Scalar upperColorBound = new Scalar(120, 120, 255);  // H: 0-179, S: 0-255, V: 0-255
 
             Core.inRange(hsv, lowerColorBound, upperColorBound, filtered);
 
@@ -113,7 +118,7 @@ public class MainActivity extends CameraActivity {
             //Imgproc.GaussianBlur(filtered,blur,new Size(45,45),1,1);
             Imgproc.medianBlur(filtered,blur,3);
             Imgproc.Canny(blur,edges,300,600); // recommended low:high ratio 1:2 to 1:3, the higher they are the tighter the edge requirement
-            Imgproc.HoughLinesP(edges,lines,1, 3.14159/180,50,20, 50);
+            Imgproc.HoughLinesP(edges,lines,1, 3.14159/180,20,20, 50);
 
             // note: look into findCountours, which selects the contour with the largest area, which is hopefully the table
 
@@ -124,8 +129,48 @@ public class MainActivity extends CameraActivity {
                 Imgproc.line(edges, new Point(val[0], val[1]), new Point(val[2], val[3]), new Scalar(255, 0, 0), 10);
             }
 
-            Size size = input_color.size();
-            Log.d(LOGTAG, String.valueOf(size.height));
+
+            //Log.d(LOGTAG, String.valueOf(corners));
+
+
+            // getPerspectiveTransform test
+
+
+            // image size
+            int ws = 864;
+            int hs = 480;
+
+            // initiate image vertices - top left, top right, bottom left, bottom right in that order
+            // these points will come from either HoughlinesP, findContours or manual later
+            // here are some test points
+            Point[] image_vertices = new Point[4];
+            image_vertices[0] = new Point(-102,5);
+            image_vertices[1] = new Point(105,4);
+            image_vertices[2] = new Point(-278,-150);
+            image_vertices[3] = new Point(236,-156);
+
+            MatOfPoint2f src = new MatOfPoint2f(
+                    image_vertices[0],
+                    image_vertices[1],
+                    image_vertices[2],
+                    image_vertices[3]);
+
+            double tx = 1.525;
+            double ty = 2.73;
+            double tz = 0.76;
+
+            MatOfPoint2f dst = new MatOfPoint2f(
+                    new Point(0,ty),
+                    new Point(tx,ty),
+                    new Point(0,0),
+                    new Point(0,ty));
+
+            Mat pTrans = Imgproc.getPerspectiveTransform(src,dst);
+
+            Log.d(LOGTAG, String.valueOf(pTrans));
+
+            //Mat decom = decomposeProjectionMatrix(pTrans);
+
 
             return edges;  // returns input frame to the screen display
         }
