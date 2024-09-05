@@ -3,6 +3,8 @@ package com.example.test3;
 import static org.opencv.calib3d.Calib3d.decomposeProjectionMatrix;
 import static org.opencv.imgproc.Imgproc.getPerspectiveTransform;
 
+import static java.lang.Math.tan;
+
 import android.os.Bundle;
 import android.util.Log;
 import android.util.Pair;
@@ -22,11 +24,17 @@ import org.opencv.android.CameraBridgeViewBase;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
 
+import org.opencv.calib3d.Calib3d;
 import org.opencv.core.Core;
+import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.core.MatOfDouble;
+import org.opencv.core.MatOfFloat;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.MatOfPoint2f;
+import org.opencv.core.MatOfPoint3f;
 import org.opencv.core.Point;
+import org.opencv.core.Point3;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
@@ -133,12 +141,40 @@ public class MainActivity extends CameraActivity {
             //Log.d(LOGTAG, String.valueOf(corners));
 
 
-            // getPerspectiveTransform test
+
 
 
             // image size
-            int ws = 864;
-            int hs = 480;
+            int width = 864;
+            int height = 480;
+
+            double fx = width / tan(1.2497/2);   // focal lengths based on angle (check resources - intrinsic parameters calculation)
+            double fy = height / tan(0.9913/2);   // source of fov angles in resources doc in pixels
+
+            double cx = (double) (width) /2;    // note: some sources say width + 1 (so 432.5 instead of 432), see which works?
+            double cy = (double) (height) /2;
+
+            Mat cameraMatrix = new Mat (3,3, CvType.CV_64FC1);
+            int row = 0, col = 0;
+            cameraMatrix.put(row,col,fx,0,cx,0,fy,cy,0,0,1);
+
+            Log.d(LOGTAG, String.valueOf(cameraMatrix));
+
+            String dump = cameraMatrix.dump();
+            Log.d(LOGTAG, dump);
+
+            // solvePnP test
+
+            double tx = 1.525;
+            double ty = 2.73;
+            double tz = 0.76;
+
+            // object (i.e. table) vertices - constant
+            MatOfPoint3f objectPoints = new MatOfPoint3f(
+                    new Point3(0,ty,0),
+                    new Point3(tx,ty,0),
+                    new Point3(0,0,0),
+                    new Point3(tx,0,0));
 
             // initiate image vertices - top left, top right, bottom left, bottom right in that order
             // these points will come from either HoughlinesP, findContours or manual later
@@ -149,27 +185,27 @@ public class MainActivity extends CameraActivity {
             image_vertices[2] = new Point(-278,-150);
             image_vertices[3] = new Point(236,-156);
 
-            MatOfPoint2f src = new MatOfPoint2f(
+            MatOfPoint2f imagePoints = new MatOfPoint2f(
                     image_vertices[0],
                     image_vertices[1],
                     image_vertices[2],
                     image_vertices[3]);
 
-            double tx = 1.525;
-            double ty = 2.73;
-            double tz = 0.76;
 
-            MatOfPoint2f dst = new MatOfPoint2f(
-                    new Point(0,ty),
-                    new Point(tx,ty),
-                    new Point(0,0),
-                    new Point(0,ty));
 
-            Mat pTrans = Imgproc.getPerspectiveTransform(src,dst);
 
-            Log.d(LOGTAG, String.valueOf(pTrans));
+            MatOfDouble coeff = new MatOfDouble();
+            Mat rvec = new Mat();
+            Mat tvec = new Mat();
 
-            //Mat decom = decomposeProjectionMatrix(pTrans);
+
+            boolean findSolution = Calib3d.solvePnP(objectPoints, imagePoints, cameraMatrix, coeff, rvec, tvec);
+
+            dump = tvec.dump();
+            Log.d(LOGTAG, dump);
+
+
+
 
 
             return edges;  // returns input frame to the screen display
