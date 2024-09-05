@@ -119,13 +119,13 @@ public class MainActivity extends CameraActivity {
             Scalar lowerColorBound = new Scalar(80, 0, 100); // HSV bounds - white is no saturation, max value, "singularity" hue
             Scalar upperColorBound = new Scalar(120, 120, 255);  // H: 0-179, S: 0-255, V: 0-255
 
-            Core.inRange(hsv, lowerColorBound, upperColorBound, filtered);
+            Imgproc.medianBlur(hsv,blur,1);
+
+            Core.inRange(blur, lowerColorBound, upperColorBound, filtered);
 
             // note on thresholding: threshold gives global boundary values, while adaptivethreshold infers boundaries against local colours
 
-            //Imgproc.GaussianBlur(filtered,blur,new Size(45,45),1,1);
-            Imgproc.medianBlur(filtered,blur,3);
-            Imgproc.Canny(blur,edges,300,600); // recommended low:high ratio 1:2 to 1:3, the higher they are the tighter the edge requirement
+            Imgproc.Canny(filtered,edges,300,600); // recommended low:high ratio 1:2 to 1:3, the higher they are the tighter the edge requirement
             Imgproc.HoughLinesP(edges,lines,1, 3.14159/180,20,20, 50);
 
             // note: look into findCountours, which selects the contour with the largest area, which is hopefully the table
@@ -137,8 +137,29 @@ public class MainActivity extends CameraActivity {
                 Imgproc.line(edges, new Point(val[0], val[1]), new Point(val[2], val[3]), new Scalar(255, 0, 0), 10);
             }
 
+            // ball detection testing
 
-            //Log.d(LOGTAG, String.valueOf(corners));
+            Mat grayblur = new Mat();
+            Mat circles = new Mat();
+
+            Imgproc.medianBlur(input_gray,grayblur,3);
+
+            Imgproc.HoughCircles(grayblur, circles, Imgproc.HOUGH_GRADIENT, 1.0,
+                    (double)blur.rows()/16, // change this value to detect circles with different distances to each other
+                    100.0, 100.0, 0, 0);
+
+
+            for (int x = 0; x < circles.cols(); x++) {
+                double[] c = circles.get(0, x);
+                Point center = new Point(Math.round(c[0]), Math.round(c[1]));
+                // circle center
+                Imgproc.circle(grayblur, center, 1, new Scalar(0, 100, 100), 3, 8, 0);
+                // circle outline
+                int radius = (int) Math.round(c[2]);
+                Imgproc.circle(grayblur, center, radius, new Scalar(255, 0, 255), 3, 8, 0);
+            }
+
+            Log.d(LOGTAG, String.valueOf(circles.cols()));
 
 
 
@@ -158,10 +179,9 @@ public class MainActivity extends CameraActivity {
             int row = 0, col = 0;
             cameraMatrix.put(row,col,fx,0,cx,0,fy,cy,0,0,1);
 
-            Log.d(LOGTAG, String.valueOf(cameraMatrix));
 
-            String dump = cameraMatrix.dump();
-            Log.d(LOGTAG, dump);
+            //String dump = cameraMatrix.dump();
+            //Log.d(LOGTAG, dump);
 
             // solvePnP test
 
@@ -201,14 +221,14 @@ public class MainActivity extends CameraActivity {
 
             boolean findSolution = Calib3d.solvePnP(objectPoints, imagePoints, cameraMatrix, coeff, rvec, tvec);
 
-            dump = tvec.dump();
-            Log.d(LOGTAG, dump);
+            //dump = rvec.dump();
+            //Log.d(LOGTAG, dump);
 
 
 
 
 
-            return edges;  // returns input frame to the screen display
+            return grayblur;  // returns input frame to the screen display
         }
     };
 
