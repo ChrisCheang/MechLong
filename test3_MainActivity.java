@@ -2,6 +2,7 @@ package com.example.test3;
 
 import static org.opencv.calib3d.Calib3d.decomposeProjectionMatrix;
 import static org.opencv.core.Core.bitwise_not;
+import static org.opencv.core.Core.max;
 import static org.opencv.imgproc.Imgproc.getPerspectiveTransform;
 
 import static java.lang.Math.tan;
@@ -40,6 +41,7 @@ import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -154,36 +156,54 @@ public class MainActivity extends CameraActivity {
             lowerColorBound = new Scalar(10, 100, 100); // HSV bounds
             upperColorBound = new Scalar(30, 255, 255);  // H: 0-179, S: 0-255, V: 0-255
 
-            Mat circles = new Mat();
             Mat ballImage = new Mat();
 
             // color filtration for orange balls test
 
-            Imgproc.medianBlur(hsv, ballImage,3);
+            Mat testing = new Mat();
+
+            Imgproc.medianBlur(hsv, ballImage,5);
+            Imgproc.medianBlur(hsv, testing,5);
             Core.inRange(ballImage, lowerColorBound, upperColorBound, ballImage);
 
 
 
+            // using HoughCircles - needs to tune the parameters first, not too reliable and many many false readings currently
+
+
+            Mat circles = new Mat();
+
             Imgproc.HoughCircles(ballImage, circles, Imgproc.HOUGH_GRADIENT, 1.0,
                     (double)blur.rows()/4, // change this value to detect circles with different distances to each other
-                    400.0, 20.0, 0, 0);
+                    30.0, 10.0, 1, 30);
 
 
             for (int x = 0; x < circles.cols(); x++) {
                 double[] c = circles.get(0, x);
                 Point center = new Point(Math.round(c[0]), Math.round(c[1]));
                 // circle center
-                Imgproc.circle(input_color, center, 1, new Scalar(0, 100, 100), 3, 8, 0);
+                Imgproc.circle(ballImage, center, 1, new Scalar(0, 100, 100), 3, 8, 0);
                 // circle outline
                 int radius = (int) Math.round(c[2]);
-                Imgproc.circle(input_color, center, radius, new Scalar(255, 0, 255), 3, 8, 0);
+                Imgproc.circle(ballImage, center, radius, new Scalar(255, 0, 255), 3, 8, 0);
             }
 
             Log.d(LOGTAG, String.valueOf(circles.cols()));
 
 
 
+            // Testing findContours
+            /*
+            List<MatOfPoint> contours = new ArrayList<>();
+            Mat hierarchy = new Mat();
+            Imgproc.findContours(ballImage, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE);
 
+            Log.d(LOGTAG, String.valueOf(contours.size()));
+
+            for (int i = 0; i < contours.size(); i++) {
+                Imgproc.drawContours(input_color, contours, i, new Scalar(255, 255, 255), -1);
+            }
+            */
 
 
 
