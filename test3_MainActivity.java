@@ -1,6 +1,7 @@
 package com.example.test3;
 
 import static org.opencv.calib3d.Calib3d.decomposeProjectionMatrix;
+import static org.opencv.core.Core.bitwise_not;
 import static org.opencv.imgproc.Imgproc.getPerspectiveTransform;
 
 import static java.lang.Math.tan;
@@ -115,6 +116,11 @@ public class MainActivity extends CameraActivity {
 
             Imgproc.cvtColor(input_color, hsv, Imgproc.COLOR_RGB2HSV); // convertion to HSV for inRange
 
+
+
+
+            // table detection tests
+
             // table blue (tentative): 80-120, 0-120, 100-170 (tested on screen-displayed image, not reliable but as a reference)
             Scalar lowerColorBound = new Scalar(80, 0, 100); // HSV bounds - white is no saturation, max value, "singularity" hue
             Scalar upperColorBound = new Scalar(120, 120, 255);  // H: 0-179, S: 0-255, V: 0-255
@@ -137,29 +143,47 @@ public class MainActivity extends CameraActivity {
                 Imgproc.line(edges, new Point(val[0], val[1]), new Point(val[2], val[3]), new Scalar(255, 0, 0), 10);
             }
 
+
+
+
+
+
             // ball detection testing
 
-            Mat grayblur = new Mat();
+            // colour bounds for orange ball
+            lowerColorBound = new Scalar(10, 100, 100); // HSV bounds
+            upperColorBound = new Scalar(30, 255, 255);  // H: 0-179, S: 0-255, V: 0-255
+
             Mat circles = new Mat();
+            Mat ballImage = new Mat();
 
-            Imgproc.medianBlur(input_gray,grayblur,3);
+            // color filtration for orange balls test
 
-            Imgproc.HoughCircles(grayblur, circles, Imgproc.HOUGH_GRADIENT, 1.0,
-                    (double)blur.rows()/16, // change this value to detect circles with different distances to each other
-                    100.0, 100.0, 0, 0);
+            Imgproc.medianBlur(hsv, ballImage,3);
+            Core.inRange(ballImage, lowerColorBound, upperColorBound, ballImage);
+
+
+
+            Imgproc.HoughCircles(ballImage, circles, Imgproc.HOUGH_GRADIENT, 1.0,
+                    (double)blur.rows()/4, // change this value to detect circles with different distances to each other
+                    400.0, 20.0, 0, 0);
 
 
             for (int x = 0; x < circles.cols(); x++) {
                 double[] c = circles.get(0, x);
                 Point center = new Point(Math.round(c[0]), Math.round(c[1]));
                 // circle center
-                Imgproc.circle(grayblur, center, 1, new Scalar(0, 100, 100), 3, 8, 0);
+                Imgproc.circle(input_color, center, 1, new Scalar(0, 100, 100), 3, 8, 0);
                 // circle outline
                 int radius = (int) Math.round(c[2]);
-                Imgproc.circle(grayblur, center, radius, new Scalar(255, 0, 255), 3, 8, 0);
+                Imgproc.circle(input_color, center, radius, new Scalar(255, 0, 255), 3, 8, 0);
             }
 
             Log.d(LOGTAG, String.valueOf(circles.cols()));
+
+
+
+
 
 
 
@@ -228,7 +252,7 @@ public class MainActivity extends CameraActivity {
 
 
 
-            return grayblur;  // returns input frame to the screen display
+            return ballImage;  // returns input frame to the screen display
         }
     };
 
