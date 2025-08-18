@@ -1,9 +1,11 @@
 package com.example.test3;
 
 import static org.opencv.calib3d.Calib3d.decomposeProjectionMatrix;
+import static org.opencv.core.Core.absdiff;
 import static org.opencv.core.Core.bitwise_not;
 import static org.opencv.core.Core.max;
 import static org.opencv.imgproc.Imgproc.getPerspectiveTransform;
+import static org.opencv.imgproc.Imgproc.threshold;
 
 import static java.lang.Math.tan;
 
@@ -46,6 +48,9 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Vector;
+
+import java.util.Calendar;
+import java.util.Date;
 
 
 public class MainActivity extends CameraActivity {
@@ -103,9 +108,13 @@ public class MainActivity extends CameraActivity {
 
         }
 
+        private boolean firstFrameCaptured = false;
+        private Mat firstGrayFrame;
+        long start = System.currentTimeMillis();
         @Override
         public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {  // called every time new frame is available
             // do stuff here
+
 
             Mat input_color = inputFrame.rgba();   // rgb version of camera input
             Mat input_gray = inputFrame.gray();   // greyscale version of camera input
@@ -117,6 +126,27 @@ public class MainActivity extends CameraActivity {
             Mat lines = new Mat();
 
             Imgproc.cvtColor(input_color, hsv, Imgproc.COLOR_RGB2HSV); // convertion to HSV for inRange
+
+
+
+            // Background subtraction tests
+
+            long now = System.currentTimeMillis() - start;
+            //Log.d(LOGTAG, String.valueOf(now));
+
+            if (!firstFrameCaptured) {
+                firstGrayFrame = input_gray.clone();
+                if (now > 3000){
+                    firstGrayFrame = input_gray.clone();
+                    firstFrameCaptured = true;  // stops after 3s to remove initial camera startup differences
+                }
+            }
+
+            Mat diff = new Mat();
+            Mat threshImage = new Mat();
+
+            absdiff(firstGrayFrame,input_gray,diff);
+            threshold(diff, threshImage,80, 255,Imgproc.THRESH_BINARY);
 
 
 
@@ -175,7 +205,7 @@ public class MainActivity extends CameraActivity {
 
             Imgproc.HoughCircles(ballImage, circles, Imgproc.HOUGH_GRADIENT, 1.0,
                     (double)blur.rows()/4, // change this value to detect circles with different distances to each other
-                    30.0, 10.0, 1, 30);
+                    30.0, 10.0, 20, 80);
 
 
             for (int x = 0; x < circles.cols(); x++) {
@@ -271,8 +301,7 @@ public class MainActivity extends CameraActivity {
 
 
 
-
-            return ballImage;  // returns input frame to the screen display
+            return threshImage;  // returns input frame to the screen display
         }
     };
 
