@@ -175,12 +175,11 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         if (mIsColorSelected) {
             mDetector.process(mRgba);
             List<MatOfPoint> contours = mDetector.getContours();
-            Log.i(TAG, "Contours count: " + contours.size());
-            Imgproc.drawContours(mRgba, contours, -1, CONTOUR_COLOR);
+            //Log.i(TAG, "Contours count: " + contours.size());
 
             for (MatOfPoint contour : contours) {
                 Point[] points = contour.toArray();
-                ///*
+
                 if (points.length > 0) {
                     MatOfPoint2f contour2f = new MatOfPoint2f(points);
                     // Calculate minimum enclosing circle
@@ -188,17 +187,18 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                     float[] radius = new float[1];
                     Imgproc.minEnclosingCircle(contour2f, center, radius);
 
-                    // Draw the center point
+                    // Draw the center point and enclosing circle
                     Imgproc.circle(mRgba, center, 5, new Scalar(0, 255, 0, 255), -1); // Green filled circle
-
-                    // Draw the enclosing circle (optional)
                     Imgproc.circle(mRgba, center, (int)radius[0], new Scalar(0, 255, 0, 255), 2); // Green circle outline
 
-                    // Log the center coordinates
-                    Log.i(TAG, "Circle center: (" + center.x + ", " + center.y + "), Radius: " + radius[0]);
-                }
+                    // Center coordinates with offset:
+                    Point centered = new Point();
 
-                 //*/
+                    centered.x = center.x - ((double) mOpenCvCameraView.getWidth()-256) /2;
+                    centered.y = center.y - ((double) mOpenCvCameraView.getHeight()) /2;
+                    Log.i(TAG, "Offset center: (" + centered.x + ", " + centered.y + ")");
+
+                }
 
             }
 
