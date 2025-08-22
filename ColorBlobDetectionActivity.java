@@ -30,6 +30,7 @@ import android.view.SurfaceView;
 import android.widget.Toast;
 
 import org.opencv.core.MatOfPoint2f;
+import org.opencv.core.Point3;
 
 public class ColorBlobDetectionActivity extends CameraActivity implements OnTouchListener, CvCameraViewListener2 {
     private static final String  TAG              = "OCVSample::Activity";
@@ -172,6 +173,23 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
     public Mat onCameraFrame(CvCameraViewFrame inputFrame) {
         mRgba = inputFrame.rgba();
 
+        // Testing camera location - origin is left corner of table
+        // First try using desmos projection representation of camera view
+        // Values can later be informed by either checkerboard calibration, table detection or kept hardcoded for rigid mounting
+        Point3 cameraLocation = new Point3(-0.4,-0.4,0.5);
+        // view rotation angles based on https://www.desmos.com/calculator/efc34da5b9?lang=zh-TW convention
+        double s = -0.8; //-0.8
+        double u = 0.4; //0.4
+
+        Point3 viewVec = new Point3(1,0,0);
+        Quaternion cameraStaticRotations = Quaternion.fromEuler(u,-s,0);
+
+        viewVec = cameraStaticRotations.rotateVector(viewVec);
+        Log.i(TAG, "Rotated ihat = (" + viewVec.x + ", " + viewVec.y + ", " + viewVec.z + ")");
+        
+
+
+
         if (mIsColorSelected) {
             mDetector.process(mRgba);
             List<MatOfPoint> contours = mDetector.getContours();
@@ -200,7 +218,6 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                     centered.x = center.x - viewWidth /2;
                     centered.y = -(center.y - viewHeight /2);
                     Log.i(TAG, "Offset center: (" + centered.x + ", " + centered.y + ")");
-                    Log.i(TAG, String.valueOf(viewHeight));
 
                 }
 
