@@ -194,9 +194,13 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                     // Center coordinates with offset:
                     Point centered = new Point();
 
-                    centered.x = center.x - ((double) mOpenCvCameraView.getWidth()-256) /2;
-                    centered.y = center.y - ((double) mOpenCvCameraView.getHeight()) /2;
+                    double viewWidth = mOpenCvCameraView.getWidth()-256;
+                    double viewHeight = mOpenCvCameraView.getHeight();
+
+                    centered.x = center.x - viewWidth /2;
+                    centered.y = -(center.y - viewHeight /2);
                     Log.i(TAG, "Offset center: (" + centered.x + ", " + centered.y + ")");
+                    Log.i(TAG, String.valueOf(viewHeight));
 
                 }
 
