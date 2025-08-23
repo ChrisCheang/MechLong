@@ -1,5 +1,8 @@
 package org.opencv.samples.colorblobdetect;
 
+import static java.lang.Math.atan;
+import static java.lang.Math.tan;
+
 import java.util.Collections;
 import java.util.List;
 
@@ -181,14 +184,13 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         double s = -0.8; //-0.8
         double u = 0.4; //0.4
 
-        Point3 viewVec = new Point3(1,0,0);
+        Point3 opticalAxes = new Point3(1,0,0);
         Quaternion cameraStaticRotations = Quaternion.fromEuler(u,-s,0);
 
-        viewVec = cameraStaticRotations.rotateVector(viewVec);
-        Log.i(TAG, "Rotated ihat = (" + viewVec.x + ", " + viewVec.y + ", " + viewVec.z + ")");
-        
+        opticalAxes = cameraStaticRotations.rotateVector(opticalAxes);
+        Log.i(TAG, "opticalAxes = (" + opticalAxes.x + ", " + opticalAxes.y + ", " + opticalAxes.z + ")");
 
-
+        Point3 ballAxes = new Point3();
 
         if (mIsColorSelected) {
             mDetector.process(mRgba);
@@ -217,7 +219,23 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
                     centered.x = center.x - viewWidth /2;
                     centered.y = -(center.y - viewHeight /2);
-                    Log.i(TAG, "Offset center: (" + centered.x + ", " + centered.y + ")");
+                    //Log.i(TAG, "Offset center: (" + centered.x + ", " + centered.y + ")");
+
+                    // xy normalisation
+                    double xbcv = (1930./2180.)*0.721223; // see desmos, xb = tan(thetahor/2)
+                    double ybcv = xbcv/1.787; // 1.787 is screen aspect ratio
+                    Point normalised = new Point();
+                    normalised.x = (2*xbcv*centered.x)/1930;
+                    normalised.y = (2*ybcv*centered.y)/1080;
+                    //Log.i(TAG, "Normalised ball center: (" + normalised.x + ", " + normalised.y + ")");
+
+                    double thetaHor = 2*atan(normalised.x);
+                    double thetaVer = 2*atan(normalised.y);
+                    //Log.i(TAG, "thetaHor: " + thetaHor + ", thetaVer: " + thetaVer);
+
+                    Quaternion ballAxesRotations = Quaternion.fromEuler(-thetaVer, -thetaHor, 0);
+                    ballAxes = ballAxesRotations.rotateVector(opticalAxes);
+                    
 
                 }
 
@@ -230,8 +248,10 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
             Mat spectrumLabel = mRgba.submat(4, 4 + mSpectrum.rows(), 70, 70 + mSpectrum.cols());
             mSpectrum.copyTo(spectrumLabel);
 
-            //circles.release();
+
         }
+
+        Log.i(TAG, "ballAxes = (" + ballAxes.x + ", " + ballAxes.y + ", " + ballAxes.z + ")");
 
         return mRgba;
     }
