@@ -190,7 +190,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         opticalAxes = cameraStaticRotations.rotateVector(opticalAxes);
         Log.i(TAG, "opticalAxes = (" + opticalAxes.x + ", " + opticalAxes.y + ", " + opticalAxes.z + ")");
 
-        Point3 ballAxes = new Point3();
+        Point3 ballAxes = new Point3(1,0,0);
 
         if (mIsColorSelected) {
             mDetector.process(mRgba);
@@ -229,13 +229,13 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                     normalised.y = (2*ybcv*centered.y)/1080;
                     //Log.i(TAG, "Normalised ball center: (" + normalised.x + ", " + normalised.y + ")");
 
-                    double thetaHor = 2*atan(normalised.x);
-                    double thetaVer = 2*atan(normalised.y);
+                    double thetaHor = atan(normalised.x);
+                    double thetaVer = atan(normalised.y);
                     //Log.i(TAG, "thetaHor: " + thetaHor + ", thetaVer: " + thetaVer);
 
-                    Quaternion ballAxesRotations = Quaternion.fromEuler(-thetaVer, -thetaHor, 0);
-                    ballAxes = ballAxesRotations.rotateVector(opticalAxes);
-                    
+                    Quaternion cameraTotalRotations = Quaternion.fromEuler(u-thetaVer,-s+thetaHor,0);
+                    ballAxes = cameraTotalRotations.rotateVector(ballAxes);
+
 
                 }
 
