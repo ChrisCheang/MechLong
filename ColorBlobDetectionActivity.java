@@ -5,7 +5,6 @@ import static java.lang.Math.tan;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 
 import org.opencv.android.CameraActivity;
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewFrame;
@@ -22,21 +21,8 @@ import org.opencv.android.CameraBridgeViewBase;
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewListener2;
 import org.opencv.imgproc.Imgproc;
 
-import android.Manifest;
 import android.annotation.SuppressLint;
-// the above suppresses missing bluetooth permission
-import android.annotation.TargetApi;
-//this was added as a recommendation to get bluetoothmanager getsystemservice, could affect usability over older android versions
 import android.app.Activity;
-import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothManager;
-import android.bluetooth.BluetoothAdapter;
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
-import android.content.pm.PackageManager;
-import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.MotionEvent;
@@ -50,44 +36,36 @@ import android.widget.Toast;
 import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point3;
 
-//@TargetApi(Build.VERSION_CODES.M)
+import android.os.AsyncTask;
+import java.net.URI;
+import java.net.URISyntaxException;
+import org.java_websocket.client.WebSocketClient;
+import org.java_websocket.handshake.ServerHandshake;
+import java.util.concurrent.TimeUnit;
+
 public class ColorBlobDetectionActivity extends CameraActivity implements OnTouchListener, CvCameraViewListener2 {
-    private static final String TAG = "OCVSample::Activity";
+    private static final String  TAG              = "OCVSample::Activity";
 
-    private boolean mIsColorSelected = false;
-    private Mat mRgba;
-    private Scalar mBlobColorRgba;
-    private Scalar mBlobColorHsv;
-    private ColorBlobDetector mDetector;
-    private Mat mSpectrum;
-    private Size SPECTRUM_SIZE;
-    private Scalar CONTOUR_COLOR;
+    private boolean              mIsColorSelected = false;
+    private Mat                  mRgba;
+    private Scalar               mBlobColorRgba;
+    private Scalar               mBlobColorHsv;
+    private ColorBlobDetector    mDetector;
+    private Mat                  mSpectrum;
+    private Size                 SPECTRUM_SIZE;
+    private Scalar               CONTOUR_COLOR;
 
-    private static final int REQUEST_CODE_BLUETOOTH_CONNECT = 1;
+    private WebSocketClient webSocketClient;
+    private long lastSendTime = 0;
+    private static final long SEND_INTERVAL_MS = 50; // Send every 50ms (20Hz)
 
     private CameraBridgeViewBase mOpenCvCameraView;
-
-    // Bluetooth permissions
-    private static final int REQUEST_BLUETOOTH_PERMISSIONS = 100;
-    private static final String[] BLUETOOTH_PERMS = {
-            Manifest.permission.BLUETOOTH,
-            Manifest.permission.BLUETOOTH_ADMIN,
-            Manifest.permission.BLUETOOTH_CONNECT,
-            Manifest.permission.BLUETOOTH_SCAN
-    };
-
-    private BluetoothAdapter mBluetoothAdapter;
-    private boolean mBluetoothInitialized = false;
-    private static final int REQUEST_ENABLE_BT = 1;
-    private static final int REQUEST_DISCOVERABLE = 2;
-
 
     public ColorBlobDetectionActivity() {
         Log.i(TAG, "Instantiated new " + this.getClass());
     }
 
     /** Called when the activity is first created. */
-    @SuppressLint("MissingPermission")
     @Override
     public void onCreate(Bundle savedInstanceState) {
         Log.i(TAG, "called onCreate");
@@ -109,174 +87,26 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         mOpenCvCameraView = (CameraBridgeViewBase) findViewById(R.id.color_blob_detection_activity_surface_view);
         mOpenCvCameraView.setVisibility(SurfaceView.VISIBLE);
         mOpenCvCameraView.setCvCameraViewListener(this);
-
-        checkBluetoothPermissions();
-
-        // Register for broadcasts when a device is discovered
-        IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-        registerReceiver(receiver, filter);
-
-        mBluetoothAdapter.startDiscovery();
-    }
-
-    // Create a BroadcastReceiver for ACTION_FOUND
-    private final BroadcastReceiver receiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            String action = intent.getAction();
-            if (BluetoothDevice.ACTION_FOUND.equals(action)) {
-                // Discovery has found a device. Get the BluetoothDevice
-                // object and its info from the Intent.
-                BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                        // TODO: Consider calling
-                        //    Activity#requestPermissions
-                        // here to request the missing permissions, and then overriding
-                        //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                        //                                          int[] grantResults)
-                        // to handle the case where the user grants the permission. See the documentation
-                        // for Activity#requestPermissions for more details.
-                        return;
-                    }
-                }
-                String deviceName = device.getName();
-                String deviceHardwareAddress = device.getAddress(); // MAC address
-            }
-        }
-    };
-
-    private void checkBluetoothPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Check if we have all required permissions for Android 12+
-            boolean allPermissionsGranted = true;
-            for (String permission : BLUETOOTH_PERMS) {
-                if (checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
-                    allPermissionsGranted = false;
-                    break;
-                }
-            }
-
-            if (!allPermissionsGranted) {
-                // Request the missing permissions
-                requestPermissions(BLUETOOTH_PERMS, REQUEST_BLUETOOTH_PERMISSIONS);
-            } else {
-                // Permissions already granted, initialize Bluetooth
-                initializeBluetooth();
-            }
-        } else {
-            // For older versions, just initialize Bluetooth
-            initializeBluetooth();
-        }
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-
-        if (requestCode == REQUEST_BLUETOOTH_PERMISSIONS) {
-            boolean allGranted = true;
-            for (int result : grantResults) {
-                if (result != PackageManager.PERMISSION_GRANTED) {
-                    allGranted = false;
-                    break;
-                }
-            }
-
-            if (allGranted) {
-                initializeBluetooth();
-            } else {
-                Log.e(TAG, "Bluetooth permissions denied");
-                Toast.makeText(this, "Bluetooth permissions are required for this app", Toast.LENGTH_LONG).show();
-            }
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    private void initializeBluetooth() {
-        // Only proceed if we have permissions (for Android 12+)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            boolean hasConnectPermission = checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
-            if (!hasConnectPermission) {
-                Log.e(TAG, "BLUETOOTH_CONNECT permission not granted");
-                return;
-            }
-        }
-
-        BluetoothManager bluetoothManager = null;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            bluetoothManager = getSystemService(BluetoothManager.class);
-        }
-
-        if (bluetoothManager != null) {
-            mBluetoothAdapter = bluetoothManager.getAdapter();
-
-            if (mBluetoothAdapter == null) {
-                Log.e(TAG, "Device does not support Bluetooth");
-                return;
-            }
-
-            if (!mBluetoothAdapter.isEnabled()) {
-                Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-                startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
-            } else {
-                makeDiscoverable();
-            }
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    private void makeDiscoverable() {
-        // Check permissions again before making discoverable
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            boolean hasConnectPermission = checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
-            if (!hasConnectPermission) {
-                Log.e(TAG, "BLUETOOTH_CONNECT permission not granted for discoverable");
-                return;
-            }
-        }
-
-        if (mBluetoothAdapter != null && mBluetoothAdapter.isEnabled()) {
-            Intent discoverableIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
-            discoverableIntent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300);
-            startActivityForResult(discoverableIntent, REQUEST_DISCOVERABLE);
-        }
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-
-        if (requestCode == REQUEST_ENABLE_BT) {
-            if (resultCode == Activity.RESULT_OK) {
-                makeDiscoverable();
-            } else {
-                Log.e(TAG, "Bluetooth not enabled");
-            }
-        } else if (requestCode == REQUEST_DISCOVERABLE) {
-            if (resultCode == Activity.RESULT_OK) {
-                mBluetoothInitialized = true;
-                Log.i(TAG, "Bluetooth discoverable");
-            } else {
-                Log.e(TAG, "Bluetooth not discoverable");
-            }
-        }
-    }
-
-    @Override
-    public void onPause() {
+    public void onPause()
+    {
         super.onPause();
         if (mOpenCvCameraView != null)
             mOpenCvCameraView.disableView();
+        disconnectWebSocket();
     }
 
     @Override
-    public void onResume() {
+    public void onResume()
+    {
         super.onResume();
         if (mOpenCvCameraView != null) {
             mOpenCvCameraView.enableView();
             mOpenCvCameraView.setOnTouchListener(ColorBlobDetectionActivity.this);
         }
+        connectWebSocket();
     }
 
     @Override
@@ -288,8 +118,77 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         super.onDestroy();
         if (mOpenCvCameraView != null)
             mOpenCvCameraView.disableView();
-        unregisterReceiver(receiver);
+        disconnectWebSocket();
     }
+
+    @SuppressLint("StaticFieldLeak") // given way to suppress memory leak issue (could lead to further issues?)
+    private void connectWebSocket() {
+        // Run WebSocket connection in background thread
+        new AsyncTask<Void, Void, Void>() {
+            @Override
+            protected Void doInBackground(Void... params) {
+                try {
+                    URI serverUri = new URI("ws://192.168.0.237:8765"); // Change to your server IP
+                    webSocketClient = new WebSocketClient(serverUri) {
+                        @Override
+                        public void onOpen(ServerHandshake handshakedata) {
+                            Log.i(TAG, "WebSocket connection opened");
+                        }
+
+                        @Override
+                        public void onMessage(String message) {
+                            Log.i(TAG, "Received WebSocket message: " + message);
+                        }
+
+                        @Override
+                        public void onClose(int code, String reason, boolean remote) {
+                            Log.i(TAG, "WebSocket connection closed: " + reason);
+                        }
+
+                        @Override
+                        public void onError(Exception ex) {
+                            Log.e(TAG, "WebSocket error: " + ex.getMessage());
+                        }
+                    };
+
+                    // Set connection timeout
+                    webSocketClient.connect();
+
+                    // Wait for connection with timeout
+                    int timeoutMs = 5000;
+                    long startTime = System.currentTimeMillis();
+                    while (!webSocketClient.isOpen() &&
+                            (System.currentTimeMillis() - startTime) < timeoutMs) {
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
+
+                    if (webSocketClient.isOpen()) {
+                        Log.i(TAG, "WebSocket connected successfully");
+                    } else {
+                        Log.e(TAG, "WebSocket connection failed or timed out");
+                    }
+
+
+                } catch (URISyntaxException e) {
+                    Log.e(TAG, "Invalid WebSocket URI: " + e.getMessage());
+                }
+                return null;
+            }
+        }.execute();
+    }
+
+    private void disconnectWebSocket() {
+        if (webSocketClient != null) {
+            webSocketClient.close();
+            webSocketClient = null;
+        }
+    }
+
 
     public void onCameraViewStarted(int width, int height) {
         mRgba = new Mat(height, width, CvType.CV_8UC4);
@@ -298,8 +197,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         mBlobColorRgba = new Scalar(255);
         mBlobColorHsv = new Scalar(255);
         SPECTRUM_SIZE = new Size(200, 64);
-        CONTOUR_COLOR = new Scalar(255, 0, 0, 255);
-
+        CONTOUR_COLOR = new Scalar(255,0,0,255);
     }
 
     public void onCameraViewStopped() {
@@ -313,8 +211,8 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         int xOffset = (mOpenCvCameraView.getWidth() - cols) / 2;
         int yOffset = (mOpenCvCameraView.getHeight() - rows) / 2;
 
-        int x = (int) event.getX() - xOffset;
-        int y = (int) event.getY() - yOffset;
+        int x = (int)event.getX() - xOffset;
+        int y = (int)event.getY() - yOffset;
 
         Log.i(TAG, "Touch image coordinates: (" + x + ", " + y + ")");
 
@@ -322,11 +220,11 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
         Rect touchedRect = new Rect();
 
-        touchedRect.x = (x > 4) ? x - 4 : 0;
-        touchedRect.y = (y > 4) ? y - 4 : 0;
+        touchedRect.x = (x>4) ? x-4 : 0;
+        touchedRect.y = (y>4) ? y-4 : 0;
 
-        touchedRect.width = (x + 4 < cols) ? x + 4 - touchedRect.x : cols - touchedRect.x;
-        touchedRect.height = (y + 4 < rows) ? y + 4 - touchedRect.y : rows - touchedRect.y;
+        touchedRect.width = (x+4 < cols) ? x + 4 - touchedRect.x : cols - touchedRect.x;
+        touchedRect.height = (y+4 < rows) ? y + 4 - touchedRect.y : rows - touchedRect.y;
 
         Mat touchedRegionRgba = mRgba.submat(touchedRect);
 
@@ -335,7 +233,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
         // Calculate average color of touched region
         mBlobColorHsv = Core.sumElems(touchedRegionHsv);
-        int pointCount = touchedRect.width * touchedRect.height;
+        int pointCount = touchedRect.width*touchedRect.height;
         for (int i = 0; i < mBlobColorHsv.val.length; i++)
             mBlobColorHsv.val[i] /= pointCount;
 
@@ -358,7 +256,39 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         return false; // don't need subsequent touch events
     }
 
-    // the above suppresses missing bluetooth permission
+    private void sendBallData(Point3 ballAxes) {
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastSendTime < SEND_INTERVAL_MS) {
+            return; // Throttle sending to avoid overloading
+        }
+
+        lastSendTime = currentTime;
+
+        if (webSocketClient != null && webSocketClient.isOpen()) {
+            try {
+                // Create JSON data
+                String jsonData = String.format(
+                        "{\"ballAxes\": {\"x\": %.4f, \"y\": %.4f, \"z\": %.4f}, " +
+                                "\"timestamp\": %d, " +
+                                "\"source\": \"android-camera-1\"}",
+                        ballAxes.x, ballAxes.y, ballAxes.z, currentTime
+                );
+
+                // Send in background thread to avoid blocking camera frame processing
+                new AsyncTask<String, Void, Void>() {
+                    @Override
+                    protected Void doInBackground(String... data) {
+                        webSocketClient.send(data[0]);
+                        return null;
+                    }
+                }.execute(jsonData);
+
+            } catch (Exception e) {
+                Log.e(TAG, "Error sending WebSocket data: " + e.getMessage());
+            }
+        }
+    }
+
     public Mat onCameraFrame(CvCameraViewFrame inputFrame) {
         mRgba = inputFrame.rgba();
 
@@ -369,22 +299,22 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         Imgproc.circle(mRgba, new Point(viewWidth / 2, viewHeight / 2), (int) 10, new Scalar(0, 255, 0, 255), 2);
         Imgproc.circle(mRgba, new Point(viewWidth / 2, viewHeight / 2), 5, new Scalar(0, 255, 0, 255), -1);
 
+
         // Testing camera location - origin is left corner of table
         // First try using desmos projection representation of camera view
         // Values can later be informed by either checkerboard calibration, table detection or kept hardcoded for rigid mounting
-        Point3 cameraLocation = new Point3(-0.4, -0.4, 0.5);
+        Point3 cameraLocation = new Point3(-0.4,-0.4,0.5);
         // view rotation angles based on https://www.desmos.com/calculator/efc34da5b9?lang=zh-TW convention
-        double s = 0; //-0.8
+        double s = -0.8; //-0.8
         double u = 0.4; //0.4
 
-        Point3 opticalAxes = new Point3(1, 0, 0);
-        Quaternion cameraStaticRotations = Quaternion.fromEuler(u, -s, 0);
+        Point3 opticalAxes = new Point3(1,0,0);
+        Quaternion cameraStaticRotations = Quaternion.fromEuler(u,-s,0);
 
         opticalAxes = cameraStaticRotations.rotateVector(opticalAxes);
         Log.i(TAG, "opticalAxes = (" + opticalAxes.x + ", " + opticalAxes.y + ", " + opticalAxes.z + ")");
 
-        Point3 ballAxes = new Point3(1, 0, 0);
-
+        Point3 ballAxes = new Point3(1,0,0);
 
         if (mIsColorSelected) {
             mDetector.process(mRgba);
@@ -424,13 +354,22 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                     double thetaVer = atan(normalised.y);
                     //Log.i(TAG, "thetaHor: " + thetaHor + ", thetaVer: " + thetaVer);
 
-                    Quaternion cameraTotalRotations = Quaternion.fromEuler(u-thetaVer,-s-thetaHor,0);
+                    Quaternion cameraTotalRotations = Quaternion.fromEuler(u-thetaVer,-s+thetaHor,0);
                     ballAxes = cameraTotalRotations.rotateVector(ballAxes);
 
 
                 }
 
             }
+
+
+            sendBallData(ballAxes);
+
+            // Draw ball axes information on screen for debugging
+            String axesText = String.format("Ball: (%.2f, %.2f, %.2f)",
+                    ballAxes.x, ballAxes.y, ballAxes.z);
+            Imgproc.putText(mRgba, axesText, new Point(50, 100),
+                    Imgproc.FONT_HERSHEY_SIMPLEX, 0.7, new Scalar(255, 255, 255, 255), 2);
 
 
             Mat colorLabel = mRgba.submat(4, 68, 4, 68);
