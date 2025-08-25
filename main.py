@@ -21,8 +21,11 @@ data_lock = threading.Lock()
 
 # Live updating variables
 
-line_1 = Line(point=[0, 0, 0], direction=[1, 1, 1])
-line_2 = Line(point=[1, 1, 0], direction=[-1, -1, 1])
+global line_1
+line_1 = Line(point=[0, -0.9, 0.25], direction=[0.0, 0.964, -0.267])
+
+global line_2
+line_2 = Line(point=[-0.62, 0, 0.15], direction=[-0.972, 0.0, -0.235])
 
 
 async def handle_connection(websocket, path):
@@ -52,6 +55,10 @@ async def handle_connection(websocket, path):
                 if ball_axes:
                     x, y, z = ball_axes.get('x', 0), ball_axes.get('y', 0), ball_axes.get('z', 0)
                     source = data.get('source', 'unknown')
+                    if source == 1:
+                        line_1 = Line(point=[0, -0.9, 0.25], direction=[x, y, z])
+                    if source == 2:
+                        line_2 = Line(point=[-0.62, 0, 0.15], direction=[x, y, z])
                     logger.info(f"Ball position - X: {x:.4f}, Y: {y:.4f}, Z: {z:.4f}, camera: {source}")
                 
                 # Save to file for later analysis
@@ -108,6 +115,9 @@ async def main():
     # Start WebSocket server
     server = await websockets.serve(handle_connection, "0.0.0.0", 8765)
     logger.info("WebSocket server started on ws://0.0.0.0:8765")
+
+    print(line_1)
+    print(line_2)
     
     # Display connection information
     print("\n" + "="*60)
