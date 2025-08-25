@@ -61,7 +61,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
     private CameraBridgeViewBase mOpenCvCameraView;
 
-    private static final int camera = 2; // change this to switch between camera versions
+    private static final int camera = 1; // change this to switch between camera versions
 
     public ColorBlobDetectionActivity() {
         Log.i(TAG, "Instantiated new " + this.getClass());
@@ -311,10 +311,12 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         // Testing camera location - origin is left corner of table
         // First try using desmos projection representation of camera view
         // Values can later be informed by either checkerboard calibration, table detection or kept hardcoded for rigid mounting
-        Point3 cameraLocation = new Point3(-0.4,-0.4,0.5);
+
         // view rotation angles based on https://www.desmos.com/calculator/efc34da5b9?lang=zh-TW convention
-        double s = -1.57; // actual table camera 1: -0.391, camera 2: 0.391
-        double u = 0.27; // actual table camera 1: 0.177, camera 2: 0.177
+        double[] ss = new double[] {-1.57, 0};
+        double[] us = new double[] {0.27, 0.237};
+        double s = ss[camera-1]; // actual table camera 1: -0.391, camera 2: 0.391
+        double u = us[camera-1]; // actual table camera 1: 0.177, camera 2: 0.177
 
         Point3 opticalAxes = new Point3(1,0,0);
         Quaternion cameraStaticRotations = Quaternion.fromEuler(u,-s,0);
