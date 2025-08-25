@@ -8,6 +8,9 @@ import threading
 import time
 from typing import Dict, List
 
+from skspatial.objects import Line
+
+
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("BallTrackerServer")
@@ -15,6 +18,12 @@ logger = logging.getLogger("BallTrackerServer")
 connected_clients = set()
 received_data: List[Dict] = []
 data_lock = threading.Lock()
+
+# Live updating variables
+
+line_1 = Line(point=[0, 0, 0], direction=[1, 1, 1])
+line_2 = Line(point=[1, 1, 0], direction=[-1, -1, 1])
+
 
 async def handle_connection(websocket, path):
     connected_clients.add(websocket)
@@ -36,17 +45,18 @@ async def handle_connection(websocket, path):
                     received_data.append(data)
                 
                 # Log the received data
-                logger.info(f"Received ball data: {json.dumps(data, indent=2)}")
+                #logger.info(f"Received ball data: {json.dumps(data, indent=2)}")
                 
                 # Process the ball axes data
                 ball_axes = data.get('ballAxes', {})
                 if ball_axes:
                     x, y, z = ball_axes.get('x', 0), ball_axes.get('y', 0), ball_axes.get('z', 0)
-                    logger.info(f"Ball position - X: {x:.4f}, Y: {y:.4f}, Z: {z:.4f}")
+                    source = data.get('source', 'unknown')
+                    logger.info(f"Ball position - X: {x:.4f}, Y: {y:.4f}, Z: {z:.4f}, camera: {source}")
                 
                 # Save to file for later analysis
-                with open('ball_tracking_data.jsonl', 'a') as f:
-                    f.write(json.dumps(data) + '\n')
+                #with open('ball_tracking_data.jsonl', 'a') as f:
+                    #f.write(json.dumps(data) + '\n')
                 
                 # Send acknowledgment back if needed
                 response = {
@@ -67,44 +77,11 @@ async def handle_connection(websocket, path):
     finally:
         connected_clients.remove(websocket)
 
-def print_received_data():
-    """Thread function to continuously print received JSON data"""
-    last_print_index = 0
-    
-    while True:
-        time.sleep(2)  # Print every 2 seconds
-        
-        with data_lock:
-            if len(received_data) > last_print_index:
-                new_data = received_data[last_print_index:]
-                last_print_index = len(received_data)
-                
-                print("\n" + "="*80)
-                print(f"RECEIVED DATA SUMMARY ({len(new_data)} new messages)")
-                print("="*80)
-                
-                for i, data in enumerate(new_data, 1):
-                    ball_axes = data.get('ballAxes', {})
-                    timestamp = data.get('timestamp', 'N/A')
-                    source = data.get('source', 'unknown')
-                    
-                    print(f"\nMessage {i}:")
-                    print(f"  Source: {source}")
-                    print(f"  Timestamp: {timestamp}")
-                    if ball_axes:
-                        x, y, z = ball_axes.get('x', 0), ball_axes.get('y', 0), ball_axes.get('z', 0)
-                        print(f"  Ball Position: X={x:.4f}, Y={y:.4f}, Z={z:.4f}")
-                    print(f"  Received at: {data.get('received_at', 'N/A')}")
-                
-                # Print statistics
-                total_messages = len(received_data)
-                print(f"\nTotal messages received: {total_messages}")
-                print("="*80)
 
 def print_data_statistics():
     """Thread function to print periodic statistics"""
     while True:
-        time.sleep(10)  # Print stats every 10 seconds
+        time.sleep(30)  # Print stats every 10 seconds
         
         with data_lock:
             if received_data:
@@ -123,9 +100,9 @@ def print_data_statistics():
 
 async def main():
     # Start the data printing threads
-    print_thread = threading.Thread(target=print_received_data, daemon=True)
+    #print_thread = threading.Thread(target=print_received_data, daemon=True)
     stats_thread = threading.Thread(target=print_data_statistics, daemon=True)
-    print_thread.start()
+    #print_thread.start()
     stats_thread.start()
     
     # Start WebSocket server
