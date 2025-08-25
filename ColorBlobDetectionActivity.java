@@ -61,6 +61,8 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
     private CameraBridgeViewBase mOpenCvCameraView;
 
+    private static final int camera = 2; // change this to switch between camera versions
+
     public ColorBlobDetectionActivity() {
         Log.i(TAG, "Instantiated new " + this.getClass());
     }
@@ -264,14 +266,15 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
         lastSendTime = currentTime;
 
+
         if (webSocketClient != null && webSocketClient.isOpen()) {
             try {
                 // Create JSON data
                 String jsonData = String.format(
                         "{\"ballAxes\": {\"x\": %.4f, \"y\": %.4f, \"z\": %.4f}, " +
                                 "\"timestamp\": %d, " +
-                                "\"source\": \"android-camera-1\"}",
-                        ballAxes.x, ballAxes.y, ballAxes.z, currentTime
+                                "\"source\": %d}",
+                        ballAxes.x, ballAxes.y, ballAxes.z, currentTime, camera
                 );
 
                 // Send in background thread to avoid blocking camera frame processing
@@ -293,8 +296,13 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         mRgba = inputFrame.rgba();
 
         // Centermark circle for view alignment
-        double viewWidth = mOpenCvCameraView.getWidth() - 256;
-        double viewHeight = mOpenCvCameraView.getHeight();
+
+        double[] viewWidthOffsets = new double[] {256, 1076}; // 256 for camera 1, for camera 2
+        double[] viewHeightOffsets = new double[] {0, 366};
+
+
+        double viewWidth = mOpenCvCameraView.getWidth() - viewWidthOffsets[camera-1];
+        double viewHeight = mOpenCvCameraView.getHeight() - viewHeightOffsets[camera-1];
 
         Imgproc.circle(mRgba, new Point(viewWidth / 2, viewHeight / 2), (int) 10, new Scalar(0, 255, 0, 255), 2);
         Imgproc.circle(mRgba, new Point(viewWidth / 2, viewHeight / 2), 5, new Scalar(0, 255, 0, 255), -1);
@@ -305,8 +313,8 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         // Values can later be informed by either checkerboard calibration, table detection or kept hardcoded for rigid mounting
         Point3 cameraLocation = new Point3(-0.4,-0.4,0.5);
         // view rotation angles based on https://www.desmos.com/calculator/efc34da5b9?lang=zh-TW convention
-        double s = -0.8; //-0.8
-        double u = 0.4; //0.4
+        double s = -1.57; // actual table camera 1: -0.391, camera 2: 0.391
+        double u = 0.27; // actual table camera 1: 0.177, camera 2: 0.177
 
         Point3 opticalAxes = new Point3(1,0,0);
         Quaternion cameraStaticRotations = Quaternion.fromEuler(u,-s,0);
@@ -343,11 +351,11 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                     //Log.i(TAG, "Offset center: (" + centered.x + ", " + centered.y + ")");
 
                     // xy normalisation
-                    double xbcv = (1930./2180.)*0.721223; // see desmos, xb = tan(thetahor/2)
-                    double ybcv = xbcv/1.787; // 1.787 is screen aspect ratio
+                    double xbcv = (viewHeight/viewWidth)*0.721223; // see desmos, xb = tan(thetahor/2)
+                    double ybcv = xbcv/(viewWidth/viewHeight); // 1.787 is screen aspect ratio
                     Point normalised = new Point();
-                    normalised.x = (2*xbcv*centered.x)/1930;
-                    normalised.y = (2*ybcv*centered.y)/1080;
+                    normalised.x = (2*xbcv*centered.x)/viewWidth;
+                    normalised.y = (2*ybcv*centered.y)/viewHeight;
                     //Log.i(TAG, "Normalised ball center: (" + normalised.x + ", " + normalised.y + ")");
 
                     double thetaHor = atan(normalised.x);
@@ -357,13 +365,16 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                     Quaternion cameraTotalRotations = Quaternion.fromEuler(u-thetaVer,-s+thetaHor,0);
                     ballAxes = cameraTotalRotations.rotateVector(ballAxes);
 
+                    // Draw ball axes information on screen for debugging
+                    String axesTextB = String.format("Ball: (%.2f, %.2f)",
+                            center.x, center.y);
+                    Imgproc.putText(mRgba, axesTextB, new Point(50, 200),
+                            Imgproc.FONT_HERSHEY_SIMPLEX, 0.7, new Scalar(255, 255, 255, 255), 2);
 
                 }
 
             }
 
-
-            sendBallData(ballAxes);
 
             // Draw ball axes information on screen for debugging
             String axesText = String.format("Ball: (%.2f, %.2f, %.2f)",
@@ -372,14 +383,16 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                     Imgproc.FONT_HERSHEY_SIMPLEX, 0.7, new Scalar(255, 255, 255, 255), 2);
 
 
+
             Mat colorLabel = mRgba.submat(4, 68, 4, 68);
             colorLabel.setTo(mBlobColorRgba);
 
             Mat spectrumLabel = mRgba.submat(4, 4 + mSpectrum.rows(), 70, 70 + mSpectrum.cols());
             mSpectrum.copyTo(spectrumLabel);
 
-
         }
+
+        sendBallData(ballAxes);
 
         Log.i(TAG, "ballAxes = (" + ballAxes.x + ", " + ballAxes.y + ", " + ballAxes.z + ")");
 
