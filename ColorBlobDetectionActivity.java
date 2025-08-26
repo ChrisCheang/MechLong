@@ -61,7 +61,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
     private CameraBridgeViewBase mOpenCvCameraView;
 
-    private static final int camera = 2; // change this to switch between camera versions
+    private static final int camera = 1; // change this to switch between camera versions
 
     public ColorBlobDetectionActivity() {
         Log.i(TAG, "Instantiated new " + this.getClass());
@@ -297,7 +297,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
         // Centermark circle for view alignment
 
-        double[] viewWidthOffsets = new double[] {256, 1076}; // 256 for camera 1, for camera 2
+        double[] viewWidthOffsets = new double[] {256, 1076}; // correction factors to adapt to Blackshark's lower resolution vs getWidth and height results
         double[] viewHeightOffsets = new double[] {0, 366};
 
 
@@ -354,8 +354,11 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                     centered.y = -(center.y - viewHeight /2);
                     //Log.i(TAG, "Offset center: (" + centered.x + ", " + centered.y + ")");
 
-                    // xy normalisation
-                    double xbcv = (viewHeight/viewWidth)*0.721223; // see desmos, xb = tan(thetahor/2)
+                    // xy normalisation - check
+                    double[] sensorHorViewAngle = new double[] {71.6, 68.3}; // in deg
+                    double[] horCorrectionFactor = new double[] {viewWidth/mOpenCvCameraView.getWidth(), 0.95}; // horizontal correction factor for blackshark found to be 0.95 experimentally
+                    double xb = tan(0.5*sensorHorViewAngle[camera-1]*3.1416/180);
+                    double xbcv = (horCorrectionFactor[camera-1])*xb; // see desmos, xb = tan(thetahor/2)
                     double ybcv = xbcv/(viewWidth/viewHeight); // 1.787 is screen aspect ratio
                     Point normalised = new Point();
                     normalised.x = (2*xbcv*centered.x)/viewWidth;
@@ -371,8 +374,14 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
                     // Draw ball axes information on screen for debugging
                     String axesTextB = String.format("Ball: (%.2f, %.2f)",
-                            center.x, center.y);
+                            normalised.x, normalised.y);
                     Imgproc.putText(mRgba, axesTextB, new Point(50, 200),
+                            Imgproc.FONT_HERSHEY_SIMPLEX, 0.7, new Scalar(255, 255, 255, 255), 2);
+
+                    // Draw ball axes information on screen for debugging
+                    String axesTextC = String.format("Screensize: (%.2f, %.2f)",
+                            viewWidth, viewHeight);
+                    Imgproc.putText(mRgba, axesTextC, new Point(50, 150),
                             Imgproc.FONT_HERSHEY_SIMPLEX, 0.7, new Scalar(255, 255, 255, 255), 2);
 
                 }
