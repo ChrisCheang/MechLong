@@ -61,7 +61,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
     private CameraBridgeViewBase mOpenCvCameraView;
 
-    private static final int camera = 1; // change this to switch between camera versions
+    private static final int camera = 2; // change this to switch between camera versions
 
     public ColorBlobDetectionActivity() {
         Log.i(TAG, "Instantiated new " + this.getClass());
@@ -324,6 +324,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         opticalAxes = cameraStaticRotations.rotateVector(opticalAxes);
         Log.i(TAG, "opticalAxes = (" + opticalAxes.x + ", " + opticalAxes.y + ", " + opticalAxes.z + ")");
 
+
         Point3 ballAxes = new Point3(1,0,0);
 
         if (mIsColorSelected) {
@@ -333,6 +334,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
             for (MatOfPoint contour : contours) {
                 Point[] points = contour.toArray();
+
 
                 if (points.length > 0) {
                     MatOfPoint2f contour2f = new MatOfPoint2f(points);
@@ -364,7 +366,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                     double thetaVer = atan(normalised.y);
                     //Log.i(TAG, "thetaHor: " + thetaHor + ", thetaVer: " + thetaVer);
 
-                    Quaternion cameraTotalRotations = Quaternion.fromEuler(u-thetaVer,-s+thetaHor,0);
+                    Quaternion cameraTotalRotations = Quaternion.fromEuler(u-thetaVer,-s-thetaHor,0);
                     ballAxes = cameraTotalRotations.rotateVector(ballAxes);
 
                     // Draw ball axes information on screen for debugging
@@ -378,14 +380,6 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
             }
 
 
-            // Draw ball axes information on screen for debugging
-            String axesText = String.format("Ball: (%.2f, %.2f, %.2f)",
-                    ballAxes.x, ballAxes.y, ballAxes.z);
-            Imgproc.putText(mRgba, axesText, new Point(50, 100),
-                    Imgproc.FONT_HERSHEY_SIMPLEX, 0.7, new Scalar(255, 255, 255, 255), 2);
-
-
-
             Mat colorLabel = mRgba.submat(4, 68, 4, 68);
             colorLabel.setTo(mBlobColorRgba);
 
@@ -393,6 +387,12 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
             mSpectrum.copyTo(spectrumLabel);
 
         }
+
+        // Draw ball axes information on screen for debugging
+        String axesText = String.format("Ball: (%.2f, %.2f, %.2f)",
+                ballAxes.x, ballAxes.y, ballAxes.z);
+        Imgproc.putText(mRgba, axesText, new Point(50, 100),
+                Imgproc.FONT_HERSHEY_SIMPLEX, 0.7, new Scalar(255, 255, 255, 255), 2);
 
         sendBallData(ballAxes);
 
