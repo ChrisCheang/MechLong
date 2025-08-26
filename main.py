@@ -38,8 +38,7 @@ class Line:
 
     def skew_int(self, B):
 
-        """Optimized version using numpy instead of SymPy"""
-        if self.direction[2] == 1 or B.direction[2] == 1:
+        if self.direction[0] == 1 or B.direction[0] == 1:
             return (0, 0, 0)
         
         # Convert to numpy arrays for faster computation
@@ -100,7 +99,7 @@ def get_lines():
         return line_1, line_2
     
 
-def calculate_intersection():
+def calculate_intersection(): # can do plots and other calculations here?
     line1, line2 = get_lines()
     
     try:
@@ -113,7 +112,7 @@ def calculate_intersection():
         return None
     
 
-async def calculate_intersection_async():
+async def calculate_intersection_async(): # can do plots and other calculations here?
     """Async wrapper for the intersection calculation"""
     loop = asyncio.get_event_loop()
     try:
@@ -161,7 +160,8 @@ async def handle_connection(websocket, path):
 
                 intersection = await calculate_intersection_async()
                 if intersection is not None:
-                    logger.info(f"viewVec - X: {x:.2f}, Y: {y:.2f}, Z: {z:.2f}, camera: {source}, current intersection: {intersection}")
+                    #logger.info(f"viewVec - X: {x:.2f}, Y: {y:.2f}, Z: {z:.2f}, camera: {source}, current intersection: {intersection}")
+                    logger.info(f"Current intersection: {round(intersection[0],2)}, {round(intersection[1],2)}, {round(intersection[2],2)}")
                 
                 # Save to file for later analysis
                 #with open('ball_tracking_data.jsonl', 'a') as f:
