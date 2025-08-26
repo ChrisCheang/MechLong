@@ -14,20 +14,8 @@ import numpy as np
 
 import concurrent.futures
 
-# Add thread pool executor for CPU-bound calculations
-executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+from vpython import *
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("BallTrackerServer")
-
-connected_clients = set()
-received_data: List[Dict] = []
-data_lock = threading.Lock()
-
-
-
-# line class for skew line approximate intersection
 
 class Line:
 
@@ -72,11 +60,77 @@ class Line:
 
 
 
+# Add thread pool executor for CPU-bound calculations
+executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("BallTrackerServer")
+
+connected_clients = set()
+received_data: List[Dict] = []
+data_lock = threading.Lock()
+
+# VPython vis setup
+ball = None
+cam1_line = None
+cam2_line = None
+trail_points = []
+max_trail_length = 50 
+vp_lock = threading.Lock()
+
+# line class for skew line approximate intersection
+
 # Live updating variables with threading log for multithreading (for multitasking)
 
-line_1 = Line(point=[0, -0.9, 0.25], direction=[0.0, 0.964, -0.267])
-line_2 = Line(point=[-0.62, 0, 0.15], direction=[0.972, 0.0, -0.235])
+# camera locations and directions (l and d), directions can be found with the desmos perspective model
+c1l = [0, -0.9, 0.25]
+c1d = [0.0, 0.964, -0.267]
+c2l = [-0.62, 0, 0.15]
+c2d = [0.972, 0.0, -0.235]
+
+line_1 = Line(point=c1l, direction=c2d)
+line_2 = Line(point=c2l, direction=c2d)
 line_lock = threading.Lock()  # Lock for thread-safe access to lines
+
+
+
+def setup_vpython_vis():
+    global ball, camera_1_location, camera_1_direction, camera_2_location
+
+    scene.width = 1024  
+    scene.height = 768
+    scene.title = "40+ Tracking"
+ 
+    box(pos=vector(0.2, -0.005, -0.2), size=vector(0.4, 0.01, 0.4), color=color.blue) # table 2.74, 1.525, 0.05
+
+    #initialize ball
+    ball = sphere(pos=vector(0, 0, 0), radius=0.021, color=color.yellow, make_trail=False)
+    ball.trail_color = color.orange
+    ball.trail_radius = 0.01
+    logger.info("VPython visualization initialized")
+
+    # Initialize camera view lines
+    #cam1_line = cylinder(pos=vector(c1l[0], c1l[1], c1l[2]), axis=vector(c1d[0],c1d[1],c1d[2]), radius=0.01, color=color.blue)
+    #cam2_line = cylinder(pos=vector(c2l[0], c2l[1], c2l[2]), axis=vector(c2d[0],c2d[1],c2d[2]), radius=0.01, color=color.red)
+
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
+
+def update_vpython_vis(intersection_point, line1, line2):
+    global ball, trail_points#, cam1_line, cam2_line
+
+    if intersection_point == (0, 0, 0):
+        return  # Skip invalid points
+    
+    with vp_lock:
+        #try:
+        x, y, z = intersection_point
+        ball.pos = vector(x,z,-y)
+        #except Exception as e:
+            #logger.error(f"Error updating VPython visualization: {e}")
+
+
+
 
 
 def update_line(source: int, direction: List[float]):
@@ -121,6 +175,12 @@ async def calculate_intersection_async(): # can do plots and other calculations 
             executor, 
             calculate_intersection
         )
+
+        # update visualization for valid points
+        if intersection is not None and intersection != (0,0,0):
+            line1, line2 = get_lines()
+            await loop.run_in_executor(executor, update_vpython_vis, intersection, line1, line2)
+
         return intersection
     except Exception as e:
         logger.error(f"Error in async intersection calculation: {e}")
@@ -219,6 +279,9 @@ def print_data_statistics():
                 print("-"*60)
 
 async def main():
+    # Set up vpython vis
+    setup_vpython_vis()
+
     # Start the data printing threads
     #print_thread = threading.Thread(target=print_received_data, daemon=True)
     stats_thread = threading.Thread(target=print_data_statistics, daemon=True)
