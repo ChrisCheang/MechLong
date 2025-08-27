@@ -258,7 +258,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         return false; // don't need subsequent touch events
     }
 
-    private void sendBallData(Point3 ballAxes) {
+    private void sendBallData(double Roll, double Pitch) {
         long currentTime = System.currentTimeMillis();
         if (currentTime - lastSendTime < SEND_INTERVAL_MS) {
             return; // Throttle sending to avoid overloading
@@ -271,10 +271,10 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
             try {
                 // Create JSON data
                 String jsonData = String.format(
-                        "{\"ballAxes\": {\"x\": %.4f, \"y\": %.4f, \"z\": %.4f}, " +
+                        "{\"ballAxes\": {\"Roll\": %.4f, \"Pitch\": %.4f}, " +
                                 "\"timestamp\": %d, " +
                                 "\"source\": %d}",
-                        ballAxes.x, ballAxes.y, ballAxes.z, currentTime, camera
+                        Roll, Pitch, currentTime, camera
                 );
 
                 // Send in background thread to avoid blocking camera frame processing
@@ -301,8 +301,11 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         double[] viewHeightOffsets = new double[] {0, 366};
 
 
-        double viewWidth = mOpenCvCameraView.getWidth() - viewWidthOffsets[camera-1];
-        double viewHeight = mOpenCvCameraView.getHeight() - viewHeightOffsets[camera-1];
+        //double viewWidth = mOpenCvCameraView.getWidth() - viewWidthOffsets[camera-1];
+        //double viewHeight = mOpenCvCameraView.getHeight() - viewHeightOffsets[camera-1];
+
+        double viewWidth = mRgba.cols();
+        double viewHeight = mRgba.rows();
 
         Imgproc.circle(mRgba, new Point(viewWidth / 2, viewHeight / 2), (int) 10, new Scalar(0, 255, 0, 255), 2);
         Imgproc.circle(mRgba, new Point(viewWidth / 2, viewHeight / 2), 5, new Scalar(0, 255, 0, 255), -1);
@@ -318,14 +321,9 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         double s = ss[camera-1]; // actual table camera 1: -0.391, camera 2: 0.391
         double u = us[camera-1]; // actual table camera 1: 0.177, camera 2: 0.177
 
-        Point3 opticalAxes = new Point3(1,0,0);
-        Quaternion cameraStaticRotations = Quaternion.fromEuler(u,-s,0);
+        double Roll = 0;
+        double Pitch = 0;
 
-        opticalAxes = cameraStaticRotations.rotateVector(opticalAxes);
-        Log.i(TAG, "opticalAxes = (" + opticalAxes.x + ", " + opticalAxes.y + ", " + opticalAxes.z + ")");
-
-
-        Point3 ballAxes = new Point3(1,0,0);
 
         if (mIsColorSelected) {
             mDetector.process(mRgba);
@@ -365,16 +363,15 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                     normalised.y = (2*ybcv*centered.y)/viewHeight;
                     //Log.i(TAG, "Normalised ball center: (" + normalised.x + ", " + normalised.y + ")");
 
-                    double thetaHor = atan(normalised.x);
-                    double thetaVer = atan(normalised.y);
+                    // Update local ball view roll and pitch
+                    Roll = atan(normalised.x);
+                    Pitch = atan(normalised.y);
                     //Log.i(TAG, "thetaHor: " + thetaHor + ", thetaVer: " + thetaVer);
 
-                    Quaternion cameraTotalRotations = Quaternion.fromEuler(u-thetaVer,-s-thetaHor,0);
-                    ballAxes = cameraTotalRotations.rotateVector(ballAxes);
 
                     // Draw ball axes information on screen for debugging
-                    String axesTextB = String.format("Ball: (%.2f, %.2f)",
-                            normalised.x, normalised.y);
+                    String axesTextB = String.format("Ball view vector local Roll, Pitch: (%.2f, %.2f)",
+                            Roll, Pitch);
                     Imgproc.putText(mRgba, axesTextB, new Point(50, 200),
                             Imgproc.FONT_HERSHEY_SIMPLEX, 0.7, new Scalar(255, 255, 255, 255), 2);
 
@@ -397,15 +394,8 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
         }
 
-        // Draw ball axes information on screen for debugging
-        String axesText = String.format("Ball: (%.2f, %.2f, %.2f)",
-                ballAxes.x, ballAxes.y, ballAxes.z);
-        Imgproc.putText(mRgba, axesText, new Point(50, 100),
-                Imgproc.FONT_HERSHEY_SIMPLEX, 0.7, new Scalar(255, 255, 255, 255), 2);
+        sendBallData(Roll, Pitch);
 
-        sendBallData(ballAxes);
-
-        Log.i(TAG, "ballAxes = (" + ballAxes.x + ", " + ballAxes.y + ", " + ballAxes.z + ")");
 
         return mRgba;
     }
