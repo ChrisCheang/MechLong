@@ -8,6 +8,7 @@ import threading
 import time
 from typing import Dict, List
 
+from pyquaternion import Quaternion
 
 
 import numpy as np
@@ -54,7 +55,11 @@ class Line:
             point1 = p1 + t * d1
             point2 = p2 + s * d2
             intersection = 0.5 * (point1 + point2)
-            return tuple(intersection)
+            if abs(intersection[0]+intersection[1]+intersection[2]) > 10:
+                return (0,0,0) #calculated intersection is wonky on startup, this saturates output so view is manageable
+            else:
+                return tuple(intersection)
+
         except np.linalg.LinAlgError:
             return (0, 0, 0)
 
@@ -83,11 +88,23 @@ vp_lock = threading.Lock()
 
 # Live updating variables with threading log for multithreading (for multitasking)
 
-# camera locations and directions (l and d), directions can be found with the desmos perspective model
+def rotateVec(s, u, roll=0., pitch=0.):
+    ihat = Quaternion(0,1,0,0)
+    pitchQ = Quaternion(axis=(0,1,0), radians=u-pitch)
+    rollQ = Quaternion(axis=(0,0,1), radians=-s-roll)
+    d = rollQ.rotate(pitchQ.rotate(ihat))
+    return [d.x,d.y,d.z]
+
+# camera locations and directions (l and d), use desmos model as reference
+# Camera 1
+
 c1l = [0, -0.9, 0.25]
-c1d = [0.0, 0.964, -0.267]
 c2l = [-0.62, 0, 0.15]
-c2d = [0.972, 0.0, -0.235]
+angles = np.array([[-1.57,0.27],[0,0.237]]) # directions defined by s, u roll and pitch as per desmos convention, [[s1,u1],[s2,u2]]
+
+c1d = rotateVec(angles[0][0], angles[0][1])
+c2d = rotateVec(angles[1][0], angles[1][1])
+
 
 line_1 = Line(point=c1l, direction=c2d)
 line_2 = Line(point=c2l, direction=c2d)
@@ -135,15 +152,17 @@ def update_vpython_vis(intersection_point, line1, line2):
 
 def update_line(source: int, direction: List[float]):
     """Update line_1 or line_2 with thread safety"""
-    global line_1, line_2
+    global line_1, line_2, c1l, c2l
     
     with line_lock:
         if source == 1:
-            line_1 = Line(point=[0, -0.9, 0.25], direction=direction)
-            #logger.info(f"Updated line_1 with direction: {direction}")
+            line_1 = Line(point=c1l, direction=direction)
+            #line_1.direction = direction
+            #logger.info(f"1 Dir: {direction}")
         elif source == 2:
-            line_2 = Line(point=[-0.62, 0, 0.15], direction=direction)
-            #logger.info(f"Updated line_2 with direction: {direction}")
+            line_2 = Line(point=c2l, direction=direction)
+            #logger.info(f"2 Dir: {direction}")
+            #line_1.direction = direction
 
 def get_lines():
     """Get current line_1 and line_2 with thread safety"""
@@ -212,16 +231,17 @@ async def handle_connection(websocket, path):
                 # Process the ball axes data
                 ball_axes = data.get('ballAxes', {})
                 if ball_axes:
-                    x, y, z = ball_axes.get('x', 0), ball_axes.get('y', 0), ball_axes.get('z', 0)
+                    roll, pitch = ball_axes.get('Roll', 0), ball_axes.get('Pitch', 0)
                     source = data.get('source', 'unknown')
                     if source in [1, 2]:
-                        update_line(source, [x, y, z])
+                        direction = rotateVec(angles[source-1][0], angles[source-1][1], roll=roll, pitch=pitch)
+                        update_line(source, direction)
                     #logger.info(f"Ball position - X: {x:.4f}, Y: {y:.4f}, Z: {z:.4f}, camera: {source}")
 
                 intersection = await calculate_intersection_async()
                 if intersection is not None:
                     #logger.info(f"viewVec - X: {x:.2f}, Y: {y:.2f}, Z: {z:.2f}, camera: {source}, current intersection: {intersection}")
-                    logger.info(f"Current intersection: {round(intersection[0],2)}, {round(intersection[1],2)}, {round(intersection[2],2)}")
+                    logger.info(f"Current intersection: {round(intersection[0],3)}, {round(intersection[1],3)}, {round(intersection[2],3)}")
                 
                 # Save to file for later analysis
                 #with open('ball_tracking_data.jsonl', 'a') as f:
