@@ -297,19 +297,12 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
         // Centermark circle for view alignment
 
-        double[] viewWidthOffsets = new double[] {256, 1076}; // correction factors to adapt to Blackshark's lower resolution vs getWidth and height results
-        double[] viewHeightOffsets = new double[] {0, 366};
-
-
-        //double viewWidth = mOpenCvCameraView.getWidth() - viewWidthOffsets[camera-1];
-        //double viewHeight = mOpenCvCameraView.getHeight() - viewHeightOffsets[camera-1];
-
         double viewWidth = mRgba.cols();
         double viewHeight = mRgba.rows();
 
         Imgproc.circle(mRgba, new Point(viewWidth / 2, viewHeight / 2), (int) 10, new Scalar(0, 255, 0, 255), 2);
         Imgproc.circle(mRgba, new Point(viewWidth / 2, viewHeight / 2), 5, new Scalar(0, 255, 0, 255), -1);
-
+        Imgproc.line(mRgba,new Point(viewWidth/2,viewHeight/2),new Point(viewWidth/2,viewHeight),new Scalar(0, 255, 0, 255), 1);
 
         // Testing camera location - origin is left corner of table
         // First try using desmos projection representation of camera view
@@ -343,7 +336,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
                     // Draw the center point and enclosing circle
                     Imgproc.circle(mRgba, center, 5, new Scalar(0, 255, 0, 255), -1); // Green filled circle
-                    Imgproc.circle(mRgba, center, (int)radius[0], new Scalar(0, 255, 0, 255), 2); // Green circle outline
+                    Imgproc.circle(mRgba, center, (int)radius[0], new Scalar(0, 255, 0, 255), 2); // Green circle outlin
 
                     // Center coordinates with offset:
                     Point centered = new Point();
@@ -353,10 +346,8 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                     //Log.i(TAG, "Offset center: (" + centered.x + ", " + centered.y + ")");
 
                     // xy normalisation - check
-                    double[] sensorHorViewAngle = new double[] {71.6, 68.3}; // in deg
-                    double[] horCorrectionFactor = new double[] {viewWidth/mOpenCvCameraView.getWidth(), 0.95}; // horizontal correction factor for blackshark found to be 0.95 experimentally
-                    double xb = tan(0.5*sensorHorViewAngle[camera-1]*3.1416/180);
-                    double xbcv = (horCorrectionFactor[camera-1])*xb; // see desmos, xb = tan(thetahor/2)
+                    double[] sensorHorViewAngle = new double[] {68.2, 65.3}; // sensor stats: 71.6, 68.3, these are empirical to remove the need for correction factors
+                    double xbcv = tan(0.5*sensorHorViewAngle[camera-1]*3.1416/180);
                     double ybcv = xbcv/(viewWidth/viewHeight); // 1.787 is screen aspect ratio
                     Point normalised = new Point();
                     normalised.x = (2*xbcv*centered.x)/viewWidth;
