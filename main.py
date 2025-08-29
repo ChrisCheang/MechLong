@@ -75,17 +75,22 @@ logger = logging.getLogger("BallTrackerServer")
 connected_clients = set()
 received_data: List[Dict] = []
 data_lock = threading.Lock()
+past_five = [{'intersection': (0,0,0), 'time': int(time.time()*1000), 'speed': 0}]
+
 
 # line class for skew line approximate intersection
 
 # Live updating variables with threading log for multithreading (for multitasking)
 
-def rotateVec(s, u, roll=0., pitch=0.):
-    ihat = Quaternion(0,1,0,0)
-    pitchQ = Quaternion(axis=(0,1,0), radians=u-pitch)
-    rollQ = Quaternion(axis=(0,0,1), radians=-s-roll)
-    d = rollQ.rotate(pitchQ.rotate(ihat))
+def rotateVec(s, u, viewvec=[1,0,0]):
+    orig = Quaternion(0,viewvec[0],viewvec[1],viewvec[2])
+    pitchQ = Quaternion(axis=(0,1,0), radians=u)
+    rollQ = Quaternion(axis=(0,0,1), radians=-s)
+    d = rollQ.rotate(pitchQ.rotate(orig))
     return [d.x,d.y,d.z]
+
+def dist(p1, p2):
+    return sqrt((p1[0]-p2[0])**2+(p1[1]-p2[1])**2+(p1[2]-p2[2])**2)
 
 # camera locations and directions (l and d), use desmos model as reference
 # Camera 1
@@ -216,13 +221,10 @@ async def handle_connection(websocket, path):
                 # Parse JSON message
                 data = json.loads(message)
                 
+                
                 # Add reception timestamp
                 data['received_at'] = datetime.now().isoformat()
                 data['client_ip'] = client_ip
-                
-                # Store the data for printing
-                with data_lock:
-                    received_data.append(data)
                 
                 # Log the received data
                 #logger.info(f"Received ball data: {json.dumps(data, indent=2)}")
@@ -230,18 +232,33 @@ async def handle_connection(websocket, path):
                 # Process the ball axes data
                 ball_axes = data.get('ballAxes', {})
                 if ball_axes:
-                    roll, pitch = ball_axes.get('Roll', 0), ball_axes.get('Pitch', 0)
+                    nx, ny = ball_axes.get('nx', 0), ball_axes.get('ny', 0)
                     source = data.get('source', 'unknown')
                     if source in [1, 2]:
-                        direction = rotateVec(angles[source-1][0], angles[source-1][1], roll=roll, pitch=pitch)
+                        direction = rotateVec(angles[source-1][0], angles[source-1][1], viewvec=[1,-nx,ny])
                         update_line(source, direction)
                     #logger.info(f"Ball position - X: {x:.4f}, Y: {y:.4f}, Z: {z:.4f}, camera: {source}")
 
                 intersection = await calculate_intersection_async()
+
                 if intersection is not None:
-                    #logger.info(f"viewVec - X: {x:.2f}, Y: {y:.2f}, Z: {z:.2f}, camera: {source}, current intersection: {intersection}")
-                    logger.info(f"Current intersection: {round(intersection[0],3)}, {round(intersection[1],3)}, {round(intersection[2],3)}")
+                    int_at_time = int(time.time()*1000)#-data.get('timestamp', 0)
+                    dt = int_at_time - past_five[-1]['time']
+                    speed = 0
+                    if dt != 0:
+                        speed = dist(intersection,past_five[-1]['intersection'])/(dt/1000)
+                    if len(past_five) == 5:
+                        past_five.pop(0)
+                    past_five.append({'intersection': intersection, 
+                                      'time': int_at_time,
+                                      'speed': speed})
+                    logger.info(f"{round(speed,1)} m/s, ({round(intersection[0],3)}, {round(intersection[1],3)}, {round(intersection[2],3)})")
                 
+                                
+                # Store the data for printing
+                with data_lock:
+                    received_data.append(data)
+
                 # Save to file for later analysis
                 #with open('ball_tracking_data.jsonl', 'a') as f:
                     #f.write(json.dumps(data) + '\n')
