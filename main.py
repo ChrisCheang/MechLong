@@ -1,4 +1,6 @@
 # ball_tracker_server.py
+import matplotlib.pyplot as plt
+
 import asyncio
 import websockets
 import json
@@ -75,11 +77,13 @@ logger = logging.getLogger("BallTrackerServer")
 connected_clients = set()
 received_data: List[Dict] = []
 data_lock = threading.Lock()
-past_five = [{'intersection': (0,0,0), 'time': int(time.time()*1000), 'speed': 0}]
+
+start_time = int(time.time()*1000)
+ball_data = [{'intersection': (0,0,0), 'time': 0, 'speed': 0},
+             {'intersection': (0,0,0), 'time': 0.05, 'speed': 0}]
 
 
 # line class for skew line approximate intersection
-
 # Live updating variables with threading log for multithreading (for multitasking)
 
 def rotateVec(s, u, viewvec=[1,0,0]):
@@ -91,6 +95,11 @@ def rotateVec(s, u, viewvec=[1,0,0]):
 
 def dist(p1, p2):
     return sqrt((p1[0]-p2[0])**2+(p1[1]-p2[1])**2+(p1[2]-p2[2])**2)
+
+def filter(unfiltered,lastval,tc,dt):
+    # input is unfiltered expected output, output is 
+    return (tc*(1000/dt)*lastval+unfiltered)/(tc*(1000/dt)+1)
+
 
 # camera locations and directions (l and d), use desmos model as reference
 # Camera 1
@@ -113,15 +122,27 @@ cam1_line = cylinder(pos=vector(c1l[0],c1l[2],-c1l[1]), radius=0.005, color=colo
 cam2_line = cylinder(pos=vector(c2l[0],c2l[2],-c2l[1]), radius=0.005, color=color.red)
 trail_points = []
 max_trail_length = 50 
+g1 = None
+gc = None
 vp_lock = threading.Lock()
 
-def setup_vpython_vis():
-    global ball, camera_1_location, camera_1_direction, camera_2_location
+# Matplotlib speed vis setup
+# plt.ion() # turning interactive mode on
+# graph = plt.plot([dic['time'] for dic in ball_data],[dic['speed'] for dic in ball_data])[0]
+# plt.ylim(0,10)
+# plt.pause(0.001)
 
-    scene.width = 1024  
-    scene.height = 768
+
+def setup_vpython_vis():
+    global ball, g1, gc, camera_1_location, camera_1_direction, camera_2_location
+
+    scene.width = 640  
+    scene.height = 480
     scene.title = "40+ Tracking"
- 
+
+    g1 = graph(xtitle='time(ms)',ytitle='speed(m/s)',xmin=0,ymin=0,ymax=10,align='left')
+    gc = gcurve()
+
     box(pos=vector(0.2, -0.005, -0.2), size=vector(0.4, 0.01, 0.4), color=color.blue) # table 2.74, 1.525, 0.05
 
     #initialize ball
@@ -136,7 +157,7 @@ def setup_vpython_vis():
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
 
 def update_vpython_vis(intersection_point, line1, line2):
-    global ball, cam1_line, cam2_line
+    global ball, cam1_line, cam2_line, ball_data#, graph
 
     if intersection_point == (0, 0, 0):
         return  # Skip invalid points
@@ -147,9 +168,16 @@ def update_vpython_vis(intersection_point, line1, line2):
         ball.pos = vector(x,z,-y)
         cam1_line.axis = vector(line1.direction[0],line1.direction[2],-line1.direction[1])
         cam2_line.axis = vector(line2.direction[0],line2.direction[2],-line2.direction[1])
+
+        #for i in range(len(ball_data)):
+        times = [dic['time'] for dic in ball_data]
+        speeds = [dic['speed'] for dic in ball_data]
+        gc.plot(times[-1],speeds[-1])
+        if ball_data[-1]['time'] > 1000:
+            g1.xmin = ball_data[-1]['time']-1000
+        
         #except Exception as e:
             #logger.error(f"Error updating VPython visualization: {e}")
-
 
 
 
@@ -192,6 +220,7 @@ def calculate_intersection(): # can do plots and other calculations here?
 async def calculate_intersection_async(): # can do plots and other calculations here?
     """Async wrapper for the intersection calculation"""
     loop = asyncio.get_event_loop()
+
     try:
         # Run the CPU-intensive calculation in a thread pool
         intersection = await loop.run_in_executor(
@@ -203,8 +232,8 @@ async def calculate_intersection_async(): # can do plots and other calculations 
         if intersection is not None and intersection != (0,0,0):
             line1, line2 = get_lines()
             await loop.run_in_executor(executor, update_vpython_vis, intersection, line1, line2)
-
         return intersection
+    
     except Exception as e:
         logger.error(f"Error in async intersection calculation: {e}")
         return None
@@ -214,13 +243,13 @@ async def handle_connection(websocket, path):
     connected_clients.add(websocket)
     client_ip = websocket.remote_address[0]
     logger.info(f"New client connected from {client_ip}. Total clients: {len(connected_clients)}")
-    
+    global start_time
+
     try:
         async for message in websocket:
             try:
                 # Parse JSON message
                 data = json.loads(message)
-                
                 
                 # Add reception timestamp
                 data['received_at'] = datetime.now().isoformat()
@@ -242,16 +271,22 @@ async def handle_connection(websocket, path):
                 intersection = await calculate_intersection_async()
 
                 if intersection is not None:
-                    int_at_time = int(time.time()*1000)#-data.get('timestamp', 0)
-                    dt = int_at_time - past_five[-1]['time']
+                    int_at_time = int(time.time()*1000) - start_time#-data.get('timestamp', 0)
+                    dt = int_at_time - ball_data[-1]['time']
                     speed = 0
                     if dt != 0:
-                        speed = dist(intersection,past_five[-1]['intersection'])/(dt/1000)
-                    if len(past_five) == 5:
-                        past_five.pop(0)
-                    past_five.append({'intersection': intersection, 
+                        speed_unfiltered = dist(intersection,ball_data[-1]['intersection'])/(dt/1000)
+                        # first order filter with 0.05s tc
+                        speed = filter(speed_unfiltered,ball_data[-1]['speed'],0.05,dt)
+                    #if len(ball_data) == 5:
+                    #    ball_data.pop(0)
+                    new_data = {'intersection': intersection, 
                                       'time': int_at_time,
-                                      'speed': speed})
+                                      'speed': speed}
+                    ball_data.append(new_data)
+                    # Save to file for later analysis
+                    with open('ball_tracking_data.jsonl', 'a') as f:
+                        f.write(json.dumps(new_data) + '\n')
                     logger.info(f"{round(speed,1)} m/s, ({round(intersection[0],3)}, {round(intersection[1],3)}, {round(intersection[2],3)})")
                 
                                 
@@ -259,9 +294,6 @@ async def handle_connection(websocket, path):
                 with data_lock:
                     received_data.append(data)
 
-                # Save to file for later analysis
-                #with open('ball_tracking_data.jsonl', 'a') as f:
-                    #f.write(json.dumps(data) + '\n')
                 
                 # Send acknowledgment back if needed
                 response = {
