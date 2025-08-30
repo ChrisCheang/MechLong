@@ -54,12 +54,12 @@ class Line:
             point2 = p2 + s * d2
             intersection = 0.5 * (point1 + point2)
             if abs(intersection[0]+intersection[1]+intersection[2]) > 10:
-                return (0,0,0) #calculated intersection is wonky on startup, this saturates output so view is manageable
+                return [0,0,0] #calculated intersection is wonky on startup, this saturates output so view is manageable
             else:
-                return tuple(intersection)
+                return list(intersection)
 
         except np.linalg.LinAlgError:
-            return (0, 0, 0)
+            return [0, 0, 0]
         
     def direction_magnitude(self):
         return dist(self.direction,[0,0,0])
@@ -78,8 +78,8 @@ received_data: List[Dict] = []
 data_lock = threading.Lock()
 
 start_time = int(time.time()*1000)
-ball_data = [{'intersection': (0,0,0), 'time': 0, 'speed': 0},
-             {'intersection': (0,0,0), 'time': 0.05, 'speed': 0}]
+ball_data = [{'intersection': [0,0,0], 'time': 0, 'speed': 0},
+             {'intersection': [0,0,0], 'time': 0.05, 'speed': 0}]
 
 
 # line class for skew line approximate intersection
@@ -232,7 +232,7 @@ async def calculate_intersection_async(): # can do plots and other calculations 
         )
 
         # update visualization for valid points
-        if intersection is not None and intersection != (0,0,0):
+        if intersection is not None and intersection != [0,0,0]:
             line1, line2 = get_lines()
             await loop.run_in_executor(executor, update_vpython_vis, intersection, line1, line2)
         return intersection
@@ -246,7 +246,7 @@ async def handle_connection(websocket, path):
     connected_clients.add(websocket)
     client_ip = websocket.remote_address[0]
     logger.info(f"New client connected from {client_ip}. Total clients: {len(connected_clients)}")
-    global start_time
+    global start_time, ball_data
 
     try:
         async for message in websocket:
@@ -279,6 +279,10 @@ async def handle_connection(websocket, path):
                     dt = int_at_time - ball_data[-1]['time']
                     speed = 0
                     if dt != 0:
+                        # filter positions
+                        for i in [0,1,2]:
+                            intersection[i] = filter(intersection[i],ball_data[-1]["intersection"][i],0.05,dt)
+        
                         speed_unfiltered = dist(intersection,ball_data[-1]['intersection'])/(dt/1000)
                         # first order filter with 0.05s tc
                         speed = filter(speed_unfiltered,ball_data[-1]['speed'],0.05,dt)
