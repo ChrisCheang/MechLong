@@ -26,11 +26,7 @@ class Line:
         self.point = point # input as [x,y,z]
         self.direction = direction # input as normalised [x,y,z]
 
-
     def skew_int(self, B):
-
-        if self.direction[0] == 1 or B.direction[0] == 1:
-            return (0, 0, 0)
         
         # Convert to numpy arrays for faster computation
         p1 = np.array(self.point)
@@ -64,6 +60,9 @@ class Line:
 
         except np.linalg.LinAlgError:
             return (0, 0, 0)
+        
+    def direction_magnitude(self):
+        return dist(self.direction,[0,0,0])
 
 
 
@@ -140,7 +139,7 @@ def setup_vpython_vis():
     scene.height = 480
     scene.title = "40+ Tracking"
 
-    g1 = graph(xtitle='time(ms)',ytitle='speed(m/s)',xmin=0,ymin=0,ymax=10,align='left')
+    g1 = graph(xtitle='time(ms)',ytitle='speed(m/s)',xmin=0,ymin=0,ymax=3,align='left')
     gc = gcurve()
 
     box(pos=vector(0.2, -0.005, -0.2), size=vector(0.4, 0.01, 0.4), color=color.blue) # table 2.74, 1.525, 0.05
@@ -206,11 +205,15 @@ def get_lines():
 
 def calculate_intersection(): # can do plots and other calculations here?
     line1, line2 = get_lines()
+    global ball_data
     
     try:
         # Calculate intersection point
+        #if line1.direction[1] == 0 or line2.direction[1] == 0: 
+        #    intersection = ball_data[-1]['intersection'] # if either camera is blocked, returns location of last known point
+        #else:
+        #    intersection = line1.skew_int(line2)
         intersection = line1.skew_int(line2)
-        #logger.info(f"Intersection point: {intersection}")
         return intersection
     except Exception as e:
         logger.error(f"Error calculating intersection: {e}")
@@ -260,7 +263,8 @@ async def handle_connection(websocket, path):
                 
                 # Process the ball axes data
                 ball_axes = data.get('ballAxes', {})
-                if ball_axes:
+                detected = data.get('detected', 'unknown')
+                if detected == 1: # if a ball is detected update view lines
                     nx, ny = ball_axes.get('nx', 0), ball_axes.get('ny', 0)
                     source = data.get('source', 'unknown')
                     if source in [1, 2]:
