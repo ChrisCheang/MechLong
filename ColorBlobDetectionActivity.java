@@ -258,7 +258,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         return false; // don't need subsequent touch events
     }
 
-    private void sendBallData(double nx, double ny) {
+    private void sendBallData(double nx, double ny, int detected) {
         long currentTime = System.currentTimeMillis();
         if (currentTime - lastSendTime < SEND_INTERVAL_MS) {
             return; // Throttle sending to avoid overloading
@@ -273,8 +273,9 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                 String jsonData = String.format(
                         "{\"ballAxes\": {\"nx\": %.4f, \"ny\": %.4f}, " +
                                 "\"timestamp\": %d, " +
+                                "\"detected\": %d, " +
                                 "\"source\": %d}",
-                        nx, ny, currentTime, camera
+                        nx, ny, currentTime, detected, camera
                 );
 
                 // Send in background thread to avoid blocking camera frame processing
@@ -311,6 +312,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         double u = us[camera-1]; // actual table camera 1: 0.177, camera 2: 0.177
 
         Point normalised = new Point(0,0);
+        int detected = 0;
 
         if (mIsColorSelected) {
             mDetector.process(mRgba);
@@ -322,6 +324,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
 
                 if (points.length > 0) {
+                    detected = 1;
                     MatOfPoint2f contour2f = new MatOfPoint2f(points);
                     // Calculate minimum enclosing circle
                     Point center = new Point();
@@ -377,7 +380,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
         }
 
-        sendBallData(normalised.x, normalised.y);
+        sendBallData(normalised.x, normalised.y, detected);
 
         // View placement assists
         Imgproc.circle(mRgba, new Point(viewWidth / 2, viewHeight / 2), (int) 10, new Scalar(0, 255, 0, 255), 2);
