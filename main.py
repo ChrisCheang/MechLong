@@ -103,13 +103,22 @@ def filter(unfiltered,lastval,tc,dt):
 # camera locations and directions (l and d), use desmos model as reference
 # Camera 1
 
-c1l = [0, -0.87, 0.29]
-c2l = [-0.62, 0, 0.1]
-angles = np.array([[-1.57,0.32],[0,0.16]]) # directions defined by s, u roll and pitch as per desmos convention, [[s1,u1],[s2,u2]]
+c1l = [0.85+0.95,0,1.095-0.76]#[0, -0.87, 0.29]
+c2l = [0,-0.75,1.095-0.76]#[-0.62, 0, 0.1]
+
+c1t = [0,1,0]  #[0,0,0]
+c2t = [0.85, 1.3, 0]   #[0,0,0]
+
+s1 = atan2(c1l[1]-c1t[1],c1t[0]-c1l[0])
+s2 = atan2(c2l[1]-c2t[1],c2t[0]-c2l[0])
+
+u1 = atan2(c1l[2]-c1t[2],sqrt((c1l[0]-c1t[0])**2+(c1l[1]-c1t[1])**2))
+u2 = atan2(c2l[2]-c2t[2],sqrt((c2l[0]-c2t[0])**2+(c2l[1]-c2t[1])**2))
+
+angles = np.array([[s1,u1],[s2,u2]]) # directions defined by s, u roll and pitch as per desmos convention, [[s1,u1],[s2,u2]]
 
 c1d = rotateVec(angles[0][0], angles[0][1])
 c2d = rotateVec(angles[1][0], angles[1][1])
-
 
 line_1 = Line(point=c1l, direction=c2d)
 line_2 = Line(point=c2l, direction=c2d)
@@ -125,12 +134,6 @@ g1 = None
 gc = None
 vp_lock = threading.Lock()
 
-# Matplotlib speed vis setup
-# plt.ion() # turning interactive mode on
-# graph = plt.plot([dic['time'] for dic in ball_data],[dic['speed'] for dic in ball_data])[0]
-# plt.ylim(0,10)
-# plt.pause(0.001)
-
 
 def setup_vpython_vis():
     global ball, g1, gc, camera_1_location, camera_1_direction, camera_2_location
@@ -138,14 +141,18 @@ def setup_vpython_vis():
     scene.width = 640  
     scene.height = 480
     scene.title = "40+ Tracking"
+    #scene.background = vec(0.3,0.3,0.3)
 
     g1 = graph(xtitle='time(s)',ytitle='speed(m/s)',xmin=0,ymin=0,ymax=3,align='left')
     gc = gcurve()
 
-    box(pos=vector(0.2, -0.005, -0.2), size=vector(0.4, 0.01, 0.4), color=color.blue) # table 2.74, 1.525, 0.05
+    tx = 0.85
+    ty = 1.3
+
+    box(pos=vector(tx/2, -0.005, -ty/2), size=vector(tx, 0.01, ty), color=color.blue) # table 2.74, 1.525, 0.05
 
     #initialize ball
-    ball = sphere(pos=vector(0, 0, 0), radius=0.021, color=color.yellow, make_trail=False)
+    ball = sphere(pos=vector(0, 0, 0), radius=0.021, color=color.orange, make_trail=False)
     ball.trail_color = color.orange
     ball.trail_radius = 0.01
     logger.info("VPython visualization initialized")
