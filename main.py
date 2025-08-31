@@ -79,7 +79,7 @@ data_lock = threading.Lock()
 
 start_time = int(time.time()*1000)
 ball_data = [{'intersection': [0,0,0], 'time': 0, 'speed': 0},
-             {'intersection': [0,0,0], 'time': 0.05, 'speed': 0}]
+             {'intersection': [0,0,0], 'time': 50, 'speed': 0}]
 
 
 # line class for skew line approximate intersection
@@ -139,7 +139,7 @@ def setup_vpython_vis():
     scene.height = 480
     scene.title = "40+ Tracking"
 
-    g1 = graph(xtitle='time(ms)',ytitle='speed(m/s)',xmin=0,ymin=0,ymax=3,align='left')
+    g1 = graph(xtitle='time(s)',ytitle='speed(m/s)',xmin=0,ymin=0,ymax=3,align='left')
     gc = gcurve()
 
     box(pos=vector(0.2, -0.005, -0.2), size=vector(0.4, 0.01, 0.4), color=color.blue) # table 2.74, 1.525, 0.05
@@ -171,9 +171,9 @@ def update_vpython_vis(intersection_point, line1, line2):
         #for i in range(len(ball_data)):
         times = [dic['time'] for dic in ball_data]
         speeds = [dic['speed'] for dic in ball_data]
-        gc.plot(times[-1],speeds[-1])
+        gc.plot(times[-1]/1000,speeds[-1])
         if ball_data[-1]['time'] > 1000:
-            g1.xmin = ball_data[-1]['time']-1000
+            g1.xmin = ball_data[-1]['time']/1000 - 1
         
         #except Exception as e:
             #logger.error(f"Error updating VPython visualization: {e}")
@@ -208,11 +208,6 @@ def calculate_intersection(): # can do plots and other calculations here?
     global ball_data
     
     try:
-        # Calculate intersection point
-        #if line1.direction[1] == 0 or line2.direction[1] == 0: 
-        #    intersection = ball_data[-1]['intersection'] # if either camera is blocked, returns location of last known point
-        #else:
-        #    intersection = line1.skew_int(line2)
         intersection = line1.skew_int(line2)
         return intersection
     except Exception as e:
@@ -277,13 +272,13 @@ async def handle_connection(websocket, path):
                 if intersection is not None:
                     int_at_time = int(time.time()*1000) - start_time#-data.get('timestamp', 0)
                     dt = int_at_time - ball_data[-1]['time']
+                    dt2 = int_at_time - ball_data[-2]['time']
                     speed = 0
-                    if dt != 0:
+                    if dt != 0 and dt2 != 0:
                         # filter positions
-                        for i in [0,1,2]:
-                            intersection[i] = filter(intersection[i],ball_data[-1]["intersection"][i],0.05,dt)
-        
-                        speed_unfiltered = dist(intersection,ball_data[-1]['intersection'])/(dt/1000)
+                        #for i in [0,1,2]:
+                        #    intersection[i] = filter(intersection[i],ball_data[-1]["intersection"][i],0.05,dt)
+                        speed_unfiltered = dist(intersection,ball_data[-2]['intersection'])/(dt2/1000)
                         # first order filter with 0.05s tc
                         speed = filter(speed_unfiltered,ball_data[-1]['speed'],0.05,dt)
                     #if len(ball_data) == 5:
@@ -293,14 +288,15 @@ async def handle_connection(websocket, path):
                                       'speed': speed}
                     ball_data.append(new_data)
                     # Save to file for later analysis
-                    with open('ball_tracking_data.jsonl', 'a') as f:
-                        f.write(json.dumps(new_data) + '\n')
+                    #with open('ball_tracking_data.jsonl', 'a') as f:
+                    #    f.write(json.dumps(new_data) + '\n')
+                    
                     logger.info(f"{round(speed,1)} m/s, ({round(intersection[0],3)}, {round(intersection[1],3)}, {round(intersection[2],3)})")
                 
                                 
                 # Store the data for printing
-                with data_lock:
-                    received_data.append(data)
+                #with data_lock:
+                #    received_data.append(data)
 
                 
                 # Send acknowledgment back if needed
