@@ -78,8 +78,13 @@ received_data: List[Dict] = []
 data_lock = threading.Lock()
 
 start_time = int(time.time()*1000)
+start_datetime = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+
 ball_data = [{'intersection': [0,0,0], 'time': 0, 'speed': 0},
              {'intersection': [0,0,0], 'time': 50, 'speed': 0}]
+
+ball_data_unfiltered = [{'intersection': [0,0,0], 'time': 0, 'speed': 0},
+                        {'intersection': [0,0,0], 'time': 50, 'speed': 0}]
 
 
 # line class for skew line approximate intersection
@@ -103,11 +108,11 @@ def filter(unfiltered,lastval,tc,dt):
 # camera locations and directions (l and d), use desmos model as reference
 # Camera 1
 
-c1l = [0.85+0.95,0,1.095-0.76]#[0, -0.87, 0.29]
-c2l = [0,-0.75,1.095-0.76]#[-0.62, 0, 0.1]
+c1l = [1.14+0.85, 1.3, 1.09-0.76]#[0, -0.87, 0.29]
+c2l = [1.93+0.85, 0, 1.08-0.76]#[-0.62, 0, 0.1]
 
-c1t = [0,1,0]  #[0,0,0]
-c2t = [0.85, 1.3, 0]   #[0,0,0]
+c1t = [0,0,0]  #[0,0,0]
+c2t = [0,0,0]   #[0,0,0]
 
 s1 = atan2(c1l[1]-c1t[1],c1t[0]-c1l[0])
 s2 = atan2(c2l[1]-c2t[1],c2t[0]-c2l[0])
@@ -143,18 +148,18 @@ def setup_vpython_vis():
     scene.title = "40+ Tracking"
     #scene.background = vec(0.3,0.3,0.3)
 
-    g1 = graph(xtitle='time(s)',ytitle='speed(m/s)',xmin=0,ymin=0,ymax=3,align='left')
+    g1 = graph(xtitle='time(s)',ytitle='speed(m/s)',xmin=0,ymin=0,ymax=10,align='left')
     gc = gcurve()
 
     tx = 0.85
     ty = 1.3
 
-    box(pos=vector(tx/2, -0.005, -ty/2), size=vector(tx, 0.01, ty), color=color.blue) # table 2.74, 1.525, 0.05
+    box(pos=vector(tx/2, -0.005, -ty/2), size=vector(tx, 0.01, ty), color=vec(0.7,0.7,1)) # table 2.74, 1.525, 0.05
 
     #initialize ball
-    ball = sphere(pos=vector(0, 0, 0), radius=0.021, color=color.orange, make_trail=False)
+    ball = sphere(pos=vector(0, 0, 0), radius=0.021, color=color.orange, make_trail=True, retain=100)
     ball.trail_color = color.orange
-    ball.trail_radius = 0.01
+    ball.trail_radius = 0.002
     logger.info("VPython visualization initialized")
 
     # Initialize camera view lines
@@ -172,15 +177,23 @@ def update_vpython_vis(intersection_point, line1, line2):
         #try:
         x, y, z = intersection_point
         ball.pos = vector(x,z,-y)
-        cam1_line.axis = vector(line1.direction[0],line1.direction[2],-line1.direction[1])
-        cam2_line.axis = vector(line2.direction[0],line2.direction[2],-line2.direction[1])
+
+        mag1 = dist(line1.direction,[0,0,0])
+        dist1 = dist(c1l,[x,y,z])
+
+        mag2 = dist(line2.direction,[0,0,0])
+        dist2 = dist(c2l,[x,y,z])
+
+
+        cam1_line.axis = vector((dist1/mag1)*line1.direction[0],(dist1/mag1)*line1.direction[2],-(dist1/mag1)*line1.direction[1])
+        cam2_line.axis = vector((dist2/mag2)*line2.direction[0],(dist2/mag2)*line2.direction[2],-(dist2/mag2)*line2.direction[1])
 
         #for i in range(len(ball_data)):
         times = [dic['time'] for dic in ball_data]
         speeds = [dic['speed'] for dic in ball_data]
         gc.plot(times[-1]/1000,speeds[-1])
         if ball_data[-1]['time'] > 1000:
-            g1.xmin = ball_data[-1]['time']/1000 - 1
+            g1.xmin = ball_data[-1]['time']/1000 - 5
         
         #except Exception as e:
             #logger.error(f"Error updating VPython visualization: {e}")
@@ -248,7 +261,7 @@ async def handle_connection(websocket, path):
     connected_clients.add(websocket)
     client_ip = websocket.remote_address[0]
     logger.info(f"New client connected from {client_ip}. Total clients: {len(connected_clients)}")
-    global start_time, ball_data
+    global start_time, start_datetime, ball_data, ball_data_unfiltered
 
     try:
         async for message in websocket:
@@ -282,21 +295,34 @@ async def handle_connection(websocket, path):
                     dt2 = int_at_time - ball_data[-2]['time']
                     speed = 0
                     if dt != 0 and dt2 != 0:
-                        # filter positions
-                        #for i in [0,1,2]:
-                        #    intersection[i] = filter(intersection[i],ball_data[-1]["intersection"][i],0.05,dt)
-                        speed_unfiltered = dist(intersection,ball_data[-2]['intersection'])/(dt2/1000)
-                        # first order filter with 0.05s tc
-                        speed = filter(speed_unfiltered,ball_data[-1]['speed'],0.05,dt)
-                    #if len(ball_data) == 5:
-                    #    ball_data.pop(0)
-                    new_data = {'intersection': intersection, 
-                                      'time': int_at_time,
-                                      'speed': speed}
-                    ball_data.append(new_data)
-                    # Save to file for later analysis
-                    #with open('ball_tracking_data.jsonl', 'a') as f:
-                    #    f.write(json.dumps(new_data) + '\n')
+                        speed = dist(intersection,ball_data[-2]['intersection'])/(dt2/1000)
+
+                        new_data = {'intersection': intersection, 
+                                        'time': int_at_time,
+                                        'speed': speed}
+                        ball_data_unfiltered.append(new_data)
+
+                        # Save raw data to file for later analysis
+                        file_name = f"data_unfiltered_{start_datetime}.json1"
+                        with open(file_name, 'a') as f:
+                            f.write(json.dumps(new_data) + '\n')
+
+                        # filter positions 
+                        intersection[0] = filter(intersection[0],ball_data[-1]["intersection"][0],0.5,dt)
+                        for i in [1,2]:
+                            intersection[i] = filter(intersection[i],ball_data[-1]["intersection"][i],0.05,dt)
+                        # speed first order filter with 0.05s tc
+                        speed = filter(speed,ball_data[-1]['speed'],0.05,dt)
+
+                        new_data = {'intersection': intersection, 
+                                        'time': int_at_time,
+                                        'speed': speed}
+                        ball_data.append(new_data)
+
+                        # Save filtered data to file for later analysis
+                        file_name = f"data_{start_datetime}.json1"
+                        with open(file_name, 'a') as f:
+                            f.write(json.dumps(new_data) + '\n')
                     
                     logger.info(f"{round(speed,1)} m/s, ({round(intersection[0],3)}, {round(intersection[1],3)}, {round(intersection[2],3)})")
                 
