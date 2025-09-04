@@ -108,11 +108,14 @@ def filter(unfiltered,lastval,tc,dt):
 # camera locations and directions (l and d), use desmos model as reference
 # Camera 1
 
-c1l = [1.14+0.85, 1.3, 1.09-0.76]#[0, -0.87, 0.29]
-c2l = [1.93+0.85, 0, 1.08-0.76]#[-0.62, 0, 0.1]
+tx = 1.525
+ty = 2.73
 
-c1t = [0,0,0]  #[0,0,0]
-c2t = [0,0,0]   #[0,0,0]
+c1l = [-1.5, 0, 1.09-0.76]#[0, -0.87, 0.29]
+c2l = [-1.65, ty, 1.09-0.76]#[-0.62, 0, 0.1]
+
+c1t = [tx/2,ty/2,0]  #[0,0,0]
+c2t = [tx/2,ty/2,0]   #[0,0,0]
 
 s1 = atan2(c1l[1]-c1t[1],c1t[0]-c1l[0])
 s2 = atan2(c2l[1]-c2t[1],c2t[0]-c2l[0])
@@ -141,23 +144,21 @@ vp_lock = threading.Lock()
 
 
 def setup_vpython_vis():
-    global ball, g1, gc, camera_1_location, camera_1_direction, camera_2_location
+    global tx, ty, ball, g1, gc, camera_1_location, camera_1_direction, camera_2_location
 
     scene.width = 640  
     scene.height = 480
     scene.title = "40+ Tracking"
-    #scene.background = vec(0.3,0.3,0.3)
+    scene.background = vec(0.7,0.7,0.7)
 
-    g1 = graph(xtitle='time(s)',ytitle='speed(m/s)',xmin=0,ymin=0,ymax=10,align='left')
+    g1 = graph(xtitle='time(s)',ytitle='speed(m/s)',xmin=0,ymin=0,ymax=20,align='left')
     gc = gcurve()
 
-    tx = 0.85
-    ty = 1.3
-
     box(pos=vector(tx/2, -0.005, -ty/2), size=vector(tx, 0.01, ty), color=vec(0.7,0.7,1)) # table 2.74, 1.525, 0.05
+    box(pos=vector(tx/2, 0.1525/2, -ty/2), size=vector(tx, 0.1525, 0.001), color=vec(1,1,1))
 
     #initialize ball
-    ball = sphere(pos=vector(0, 0, 0), radius=0.021, color=color.orange, make_trail=True, retain=100)
+    ball = sphere(pos=vector(0, 0, 0), radius=0.021, color=color.orange, make_trail=True, retain=200)
     ball.trail_color = color.orange
     ball.trail_radius = 0.002
     logger.info("VPython visualization initialized")
@@ -308,9 +309,9 @@ async def handle_connection(websocket, path):
                             f.write(json.dumps(new_data) + '\n')
 
                         # filter positions 
-                        intersection[0] = filter(intersection[0],ball_data[-1]["intersection"][0],0.5,dt)
-                        for i in [1,2]:
-                            intersection[i] = filter(intersection[i],ball_data[-1]["intersection"][i],0.05,dt)
+                        intersection[0] = filter(intersection[0],ball_data[-1]["intersection"][0],0.2,dt)
+                        intersection[1] = filter(intersection[1],ball_data[-1]["intersection"][1],0.02,dt)
+                        intersection[2] = filter(intersection[2],ball_data[-1]["intersection"][2],0.05,dt)
                         # speed first order filter with 0.05s tc
                         speed = filter(speed,ball_data[-1]['speed'],0.05,dt)
 
