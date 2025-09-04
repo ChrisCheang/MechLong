@@ -57,7 +57,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
     private WebSocketClient webSocketClient;
     private long lastSendTime = 0;
-    private static final long SEND_INTERVAL_MS = 50; // Send every 50ms (20Hz)
+    private static final long SEND_INTERVAL_MS = 10; // Send every 50ms (20Hz)
 
     private CameraBridgeViewBase mOpenCvCameraView;
 
@@ -130,7 +130,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
             @Override
             protected Void doInBackground(Void... params) {
                 try {
-                    URI serverUri = new URI("ws://192.168.0.237:8765"); // Change to your server IP
+                    URI serverUri = new URI("ws://10.149.167.117:8765"); // Change to your server IP
                     webSocketClient = new WebSocketClient(serverUri) {
                         @Override
                         public void onOpen(ServerHandshake handshakedata) {
@@ -314,9 +314,16 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         Point normalised = new Point(0,0);
         int detected = 0;
 
+        Mat mask = new Mat();
+
         if (mIsColorSelected) {
             mDetector.process(mRgba);
             List<MatOfPoint> contours = mDetector.getContours();
+            mask = mDetector.getMask();
+            Scalar maskCount = Core.sumElems(mask);
+            double maskSum = maskCount.val[0]/255;
+
+
             //Log.i(TAG, "Contours count: " + contours.size());
 
             for (MatOfPoint contour : contours) {
@@ -369,14 +376,20 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
                 }
 
-            }
 
+
+            }
 
             Mat colorLabel = mRgba.submat(4, 68, 4, 68);
             colorLabel.setTo(mBlobColorRgba);
 
             Mat spectrumLabel = mRgba.submat(4, 4 + mSpectrum.rows(), 70, 70 + mSpectrum.cols());
             mSpectrum.copyTo(spectrumLabel);
+
+            String axesTextD = String.format("maskSum: %.2f",
+                    maskSum);
+            Imgproc.putText(mRgba, axesTextD, new Point(50, 250),
+                    Imgproc.FONT_HERSHEY_SIMPLEX, 0.7, new Scalar(255, 255, 255, 255), 2);
 
         }
 
@@ -386,7 +399,6 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         Imgproc.circle(mRgba, new Point(viewWidth / 2, viewHeight / 2), (int) 10, new Scalar(0, 255, 0, 255), 2);
         Imgproc.circle(mRgba, new Point(viewWidth / 2, viewHeight / 2), 5, new Scalar(0, 255, 0, 255), -1);
         Imgproc.line(mRgba,new Point(viewWidth/2,viewHeight/2),new Point(viewWidth/2,viewHeight),new Scalar(0, 255, 0, 255), 1);
-
 
         return mRgba;
     }
