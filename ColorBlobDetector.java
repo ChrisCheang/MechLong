@@ -21,12 +21,13 @@ public class ColorBlobDetector {
     private Scalar mColorRadius = new Scalar(25,50,50,0);
     private Mat mSpectrum = new Mat();
     private List<MatOfPoint> mContours = new ArrayList<MatOfPoint>();
+    private Mat mDilatedMask = new Mat();
 
     // Cache
     Mat mPyrDownMat = new Mat();
     Mat mHsvMat = new Mat();
     Mat mMask = new Mat();
-    Mat mDilatedMask = new Mat();
+    // Mat mDilatedMask = new Mat();
     Mat mHierarchy = new Mat();
 
     public void setColorRadius(Scalar radius) {
@@ -67,7 +68,7 @@ public class ColorBlobDetector {
         mMinContourArea = area;
     }
 
-    public void process(Mat rgbaImage) {
+    public void createMask(Mat rgbaImage) {
         Imgproc.pyrDown(rgbaImage, mPyrDownMat);
         //Imgproc.pyrDown(mPyrDownMat, mPyrDownMat);
 
@@ -75,6 +76,14 @@ public class ColorBlobDetector {
 
         Core.inRange(mHsvMat, mLowerBound, mUpperBound, mMask);
         Imgproc.dilate(mMask, mDilatedMask, new Mat());
+    }
+
+    public Mat getMask() {return mDilatedMask; }
+
+    public void process(Mat rgbaImage) {
+
+        this.createMask(rgbaImage);
+        mDilatedMask = this.getMask();
 
         List<MatOfPoint> contours = new ArrayList<MatOfPoint>();
 
@@ -105,4 +114,6 @@ public class ColorBlobDetector {
     public List<MatOfPoint> getContours() {
         return mContours;
     }
+
+
 }
