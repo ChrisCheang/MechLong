@@ -9,6 +9,9 @@ import threading
 
 from pyquaternion import Quaternion
 
+from sklearn.linear_model import LinearRegression
+
+
 
 class Line:
 
@@ -77,11 +80,14 @@ def filter(unfiltered,lastval,tc,dt):
 # camera locations and directions (l and d), use desmos model as reference
 # Camera 1
 
-c1l = [1.14+0.85, 1.3, 1.09-0.76]#[0, -0.87, 0.29]
-c2l = [1.93+0.85, 0, 1.08-0.76]#[-0.62, 0, 0.1]
+tx = 1.525
+ty = 2.73
 
-c1t = [0,0,0]  #[0,0,0]
-c2t = [0,0,0]   #[0,0,0]
+c1l = [-1.5, 0, 1.09-0.76]#[0, -0.87, 0.29]
+c2l = [-1.65, ty, 1.09-0.76]#[-0.62, 0, 0.1]
+
+c1t = [tx/2,ty/2,0]  #[0,0,0]
+c2t = [tx/2,ty/2,0]   #[0,0,0]
 
 s1 = atan2(c1l[1]-c1t[1],c1t[0]-c1l[0])
 s2 = atan2(c2l[1]-c2t[1],c2t[0]-c2l[0])
@@ -107,29 +113,28 @@ vp_lock = threading.Lock()
 
 
 def setup_vpython_vis():
-    global ball, ball2, g1, gc, gc2, camera_1_location, camera_1_direction, camera_2_location
+    global tx, ty, ball, ball2, g1, gc, gc2, camera_1_location, camera_1_direction, camera_2_location
 
-    scene.width = 640  
-    scene.height = 480
+    scene.width = 768#640  
+    scene.height = 576#480
     scene.title = "40+ Tracking"
-    #scene.background = vec(0.3,0.3,0.3)
+    scene.background = vec(0.7,0.7,0.7)
 
-    g1 = graph(xtitle='time(s)',ytitle='speed(m/s)',xmin=0,ymin=0,ymax=10,align='left')
-    gc = gcurve()
-    gc2 = gcurve()
-
-    tx = 0.85
-    ty = 1.3
+    g1 = graph(xtitle='time(s)',ytitle='speed(m/s)',xmin=0,ymin=0,align='left')
+    gc = gcurve(color=color.orange)
+    gc2 = gcurve(color=color.blue)
 
     box(pos=vector(tx/2, -0.005, -ty/2), size=vector(tx, 0.01, ty), color=vec(0.7,0.7,1)) # table 2.74, 1.525, 0.05
+    box(pos=vector(tx/2, 0.1525/2, -ty/2), size=vector(tx, 0.1525, 0.001), color=vec(1,1,1))
+
 
     #initialize ball
-    ball = sphere(pos=vector(0, 0, 0), radius=0.021, color=color.orange, make_trail=True, retain=100)
+    ball = sphere(pos=vector(0, 0, 0), radius=0.021, color=color.orange, make_trail=True, retain=200)
     ball.trail_color = color.orange
     ball.trail_radius = 0.002
 
     #initialize ball 2
-    ball2 = sphere(pos=vector(0, 0, 0), radius=0.021, color=color.orange, make_trail=True, retain=100)
+    ball2 = sphere(pos=vector(0, 0, 0), radius=0.021, color=color.orange, make_trail=True, retain=200)
     ball2.trail_color = color.blue
     ball2.trail_radius = 0.002
 
@@ -183,24 +188,70 @@ def update_vpython_vis_unfiltered(intersection_point, index):
 
 
 # Read files. note: check if both files are the same length
-with open('data_2025-09-02 16-37-23.json1', 'r') as file:
+with open('data_2025-09-04 16-29-18.json1', 'r') as file:
     ball_data = list(map(json.loads, file))
-with open('data_unfiltered_2025-09-02 16-37-23.json1') as file:
+with open('data_unfiltered_2025-09-04 16-29-18.json1', 'r') as file:
     ball_data_unfiltered = list(map(json.loads, file))
+
+
+# new dataset to test other filters
+no_points = 4
+ball_data_re = ball_data_unfiltered[:(no_points+1)] #initialise as first five unfiltered datapoints, in main would be five unknown ones.
+
+def linear_regression_filter(xdata,ydata,x_extrapolate):
+    x = np.array(xdata).reshape((-1,1))
+    y = np.array(ydata)
+    model = LinearRegression().fit(x,y)
+    return model.predict(np.array(x_extrapolate).reshape((-1,1)))[0]
+
+for i in range(no_points+1,len(ball_data_unfiltered)-1):
+    times = [dic['time'] for dic in ball_data_unfiltered[(i-no_points+1):(i+1)]]
+    xs = [dic['intersection'][0] for dic in ball_data_unfiltered[(i-no_points+1):(i+1)]]
+    ys = [dic['intersection'][1] for dic in ball_data_unfiltered[(i-no_points+1):(i+1)]]
+    zs = [dic['intersection'][2] for dic in ball_data_unfiltered[(i-no_points+1):(i+1)]]
+
+    #linear regression filter
+    #x = linear_regression_filter(times, xs, ball_data_unfiltered[i+1]['time'])
+    #y = linear_regression_filter(times, ys, ball_data_unfiltered[i+1]['time'])
+    #z = linear_regression_filter(times, zs, ball_data_unfiltered[i+1]['time'])
+
+    dt = ball_data_unfiltered[i]['time'] - ball_data_unfiltered[i-1]['time']
+    dt2 = ball_data_unfiltered[i]['time'] - ball_data_unfiltered[i-2]['time']
+
+    #first order filter
+    x = filter(xs[-1],ball_data_re[-1]['intersection'][0],0.2,dt) #xs[-1]
+    y = filter(ys[-1],ball_data_re[-1]['intersection'][1],0.02,dt) #ys[-1]
+    z = filter(zs[-1],ball_data_re[-1]['intersection'][2],0.05,dt) #zs[-1]
+
+    speed = dist([x,y,z],ball_data_re[-2]['intersection'])/(dt2/1000)
+    speed = filter(speed,ball_data_re[-1]['speed'],0.05,dt)
+
+    #x-jump filter (don't add new point if x jumps by more than a threshold difference (to remove large jumps from possible erronous detection), makes the filtered and unfiltered lists different in length so beware)
+    x_jump = abs(x-ball_data_re[-1]['intersection'][0])
+    if x_jump < 0.25:
+        new_data = {'intersection': [x,y,z], 
+                    'time': ball_data_unfiltered[i]['time'],
+                    'speed': speed}   
+        ball_data_re.append(new_data) 
+
+    print("calculating")
+print("done")
 
 
 start_time = int(time.time()*1000)
 
 setup_vpython_vis()
 
-i_start = 11500
-i_end = 13000 #len(ball_data)
+i_start = 0 #2500 for 09-04#2, 30000 for 09-04#1, 11500 for 09-02
+i_end = len(ball_data_re) #note: this cuts visualisation immediately, to pause use ctrl c in terminal
 i = i_start # start index
+fast_forward = 2
+
 while i < i_end:
-    now_time = int(time.time()*1000)-start_time+ball_data[i_start]['time']
-    if ball_data[i]['time'] < now_time:
-        update_vpython_vis(ball_data[i]['intersection'], index=i)
-        update_vpython_vis_unfiltered(ball_data_unfiltered[i]['intersection'], index=i) #times between the two sets match
+    now_time = int(time.time()*1000)-start_time+ball_data_re[i_start]['time']
+    if ball_data[i]['time'] < fast_forward*now_time:
+        update_vpython_vis(ball_data_re[i]['intersection'], index=i)
+        #update_vpython_vis_unfiltered(ball_data_unfiltered[i]['intersection'], index=i) #times between the two sets match
         print(f"{(ball_data[i]['time'])/1000} sec")
         i += 1
     
