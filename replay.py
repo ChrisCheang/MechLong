@@ -11,6 +11,8 @@ from pyquaternion import Quaternion
 
 from sklearn.linear_model import LinearRegression
 
+import keyboard
+
 
 
 class Line:
@@ -120,7 +122,7 @@ def setup_vpython_vis():
     scene.title = "40+ Tracking"
     scene.background = vec(0.7,0.7,0.7)
 
-    g1 = graph(xtitle='time(s)',ytitle='speed(m/s)',xmin=0,ymin=0,align='left')
+    g1 = graph(xtitle='time(s)',ytitle='speed(m/s)',xmin=0,ymin=0,ymax=20,align='left')
     gc = gcurve(color=color.orange)
     gc2 = gcurve(color=color.blue)
 
@@ -129,12 +131,12 @@ def setup_vpython_vis():
 
 
     #initialize ball
-    ball = sphere(pos=vector(0, 0, 0), radius=0.021, color=color.orange, make_trail=True, retain=200)
+    ball = sphere(pos=vector(0, 0, 0), radius=0.021, color=color.orange, make_trail=True, retain=100)
     ball.trail_color = color.orange
     ball.trail_radius = 0.002
 
     #initialize ball 2
-    ball2 = sphere(pos=vector(0, 0, 0), radius=0.021, color=color.orange, make_trail=True, retain=200)
+    ball2 = sphere(pos=vector(0, 0, 0), radius=0.021, color=color.orange, make_trail=True, retain=100)
     ball2.trail_color = color.blue
     ball2.trail_radius = 0.002
 
@@ -188,9 +190,9 @@ def update_vpython_vis_unfiltered(intersection_point, index):
 
 
 # Read files. note: check if both files are the same length
-with open('data_2025-09-04 16-29-18.json1', 'r') as file:
+with open('data_2025-09-07 16-11-25.json1', 'r') as file:
     ball_data = list(map(json.loads, file))
-with open('data_unfiltered_2025-09-04 16-29-18.json1', 'r') as file:
+with open('data_unfiltered_2025-09-07 16-11-25.json1', 'r') as file:
     ball_data_unfiltered = list(map(json.loads, file))
 
 
@@ -242,19 +244,40 @@ start_time = int(time.time()*1000)
 
 setup_vpython_vis()
 
-i_start = 0 #2500 for 09-04#2, 30000 for 09-04#1, 11500 for 09-02
-i_end = len(ball_data_re) #note: this cuts visualisation immediately, to pause use ctrl c in terminal
+i_start = 36500 #2500 for 09-04#2, 30000 for 09-04#1, 11500 for 09-02
+i_end = len(ball_data) #note: this cuts visualisation immediately, to pause use ctrl c in terminal
 i = i_start # start index
-fast_forward = 2
+fast_forward = False
+
+pause = False
+now_time = ball_data[i_start]['time']
+play_time = now_time
 
 while i < i_end:
-    now_time = int(time.time()*1000)-start_time+ball_data_re[i_start]['time']
-    if ball_data[i]['time'] < fast_forward*now_time:
-        update_vpython_vis(ball_data_re[i]['intersection'], index=i)
-        #update_vpython_vis_unfiltered(ball_data_unfiltered[i]['intersection'], index=i) #times between the two sets match
-        print(f"{(ball_data[i]['time'])/1000} sec")
-        i += 1
     
+    if keyboard.is_pressed('p'):
+        pause = True
+    elif keyboard.is_pressed('r'):
+        pause = False
+
+    if not pause:    
+        now_time = int(time.time()*1000)-start_time+ball_data[i_start]['time']
+        
+        if not fast_forward:
+            if ball_data[i]['time'] < now_time:
+                update_vpython_vis(ball_data[i]['intersection'], index=i)
+                update_vpython_vis_unfiltered(ball_data_unfiltered[i]['intersection'], index=i) #times between the two sets match
+                i += 1
+        else:
+            update_vpython_vis(ball_data[i]['intersection'], index=i)
+            update_vpython_vis_unfiltered(ball_data_unfiltered[i]['intersection'], index=i) #times between the two sets match
+            i += 5
+    else:
+        start_time += int(time.time()*1000)-(now_time+start_time)
+    print(f"record time: {round(ball_data[i]['time']/1000,2)}, index = {i}, paused = {pause}, fastforward = {fast_forward}")
+
+
+
 
 
 
