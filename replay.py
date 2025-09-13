@@ -290,7 +290,7 @@ start_time = int(time.time()*1000)
 
 setup_vpython_vis()
 
-i_start = 36500 #2500 for 09-04#2, 30000 for 09-04#1, 11500 for 09-02
+i_start = 40000 #2500 for 09-04#2, 30000 for 09-04#1, 11500 for 09-02
 i_end = len(ball_data) #note: this cuts visualisation immediately, to pause use ctrl c in terminal
 i = i_start # start index
 fast_forward = False
@@ -298,15 +298,22 @@ fast_forward = False
 pause = False
 now_time = ball_data_re[i_start]['time']
 play_time = now_time
+pause_time = now_time
 
 while i < i_end:
     
     if keyboard.is_pressed('p'):
+        if not pause:
+            time_paused = int(time.time()*1000)
         pause = True
+        
     elif keyboard.is_pressed('r'):
+        if pause:
+            pause_time = int(time.time()*1000)-time_paused
+            start_time += pause_time
         pause = False
 
-    if not pause:    
+    if not pause:
         now_time = int(time.time()*1000)-start_time+ball_data_re[i_start]['time']
         #now_time += (int(time.time()*1000)-start_time)+now_time
 
@@ -321,10 +328,10 @@ while i < i_end:
             #update_vpython_vis(ball_data_unfiltered[i]['intersection'], index=i, ball=ball2, curve=gc2, data=ball_data_unfiltered) #times between the two sets match
             update_vpython_traj_projection(ball_data_re[i]['intersection'],ball_data_re[i]['speed'])
             i += 5
-    else:
-        start_time += int(time.time()*1000)-(now_time+start_time)
+        #start_time += int(time.time()*1000)-(now_time+start_time)
+        #start_time = int(time.time()*1000) - pause_time
     #print(now_time)
-    print(f"record time: {round(ball_data_re[i]['time']/1000,2)}, index = {i}, paused = {pause}, speed = ({round(ball_data_re[i]['speed'][0],2)},{round(ball_data_re[i]['speed'][1],2)},{round(ball_data_re[i]['speed'][2],2)})")
+    print(f"start: {round(start_time,2)}, now: {round(now_time/1000,2)}, record time: {round(ball_data_re[i]['time']/1000,2)}, index = {i}, paused = {pause}, speed = ({round(ball_data_re[i]['speed'][0],2)},{round(ball_data_re[i]['speed'][1],2)},{round(ball_data_re[i]['speed'][2],2)})")
 
 
 
