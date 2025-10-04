@@ -64,6 +64,51 @@ class Line:
     def direction_magnitude(self):
         return dist(self.direction,[0,0,0])
 
+class Bounce:
+    def __init__(self,p,v):
+        self.p = p
+        self.v = v
+
+    def traj_single(self, t):
+        x = self.p[0]+t*self.v[0]
+        y = self.p[1]+t*self.v[1]
+        z = self.p[2]+t*self.v[2]-0.5*9.81*t**2
+        return [x,y,z]
+
+    def firstbouncet(self):
+        discrim = (self.v[2])**2+4*0.5*9.81*self.p[2]
+        if discrim < 0:
+            return 0
+        else:
+            numer = self.v[2]+sqrt(discrim)
+            denom = 2*0.5*9.81
+            return numer/denom
+    
+    def pfirstbounce(self):
+        return self.traj_single(self.firstbouncet())
+    
+    def traj_second(self,t):
+        eball = 0.949 # empirical estimation of ball coeff of restitution
+        Bounce2 = Bounce(self.pfirstbounce(),[self.v[0],self.v[1],eball**2 * abs(self.v[2]-9.81*self.firstbouncet())])
+        return Bounce2.traj_single(t)
+    
+    def traj(self,t):
+        if t < self.firstbouncet():
+            return self.traj_single(t)
+        else:
+            return self.traj_second(t-self.firstbouncet())
+        
+
+
+
+# idea: Ballreader object created at the start of program, with state "not in play" (out of "not in play", "in play")
+# at each iteration, the state is updated based on trajectory estimation with the Bounce class with similar code from replay.py
+# if a ball is detected to travel from one side to the other with sufficient velocity, state changes to "in play" and the Ballreader object starts collecting ball pos data stream
+# "in play" has two/three types - "top spin", "back spin" and "side spin"?. With 2+ points, actual trajectory is compared with prediction from the Bounce object
+# if ball drops more, identify as "top spin", "back spin" if the opposite and "side spin" if x varies from trajectory a lot
+# Could be easier to incorporate the above functionality straight into ball_data 
+
+
 
 
 # Add thread pool executor for CPU-bound calculations
@@ -80,11 +125,15 @@ data_lock = threading.Lock()
 start_time = int(time.time()*1000)
 start_datetime = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
 
-ball_data = [{'intersection': [0,0,0], 'time': 0, 'speed': 0},
-             {'intersection': [0,0,0], 'time': 50, 'speed': 0}]
+ball_data = [{'intersection': [0,0,0], 'time': 0, 'speed': [0,0,0,0]},
+             {'intersection': [0,0,0], 'time': 50, 'speed': [0,0,0,0]},
+             {'intersection': [0,0,0], 'time': 50, 'speed': [0,0,0,0]},
+             {'intersection': [0,0,0], 'time': 50, 'speed': [0,0,0,0]}]
 
-ball_data_unfiltered = [{'intersection': [0,0,0], 'time': 0, 'speed': 0},
-                        {'intersection': [0,0,0], 'time': 50, 'speed': 0}]
+ball_data_unfiltered = [{'intersection': [0,0,0], 'time': 0, 'speed': [0,0,0,0]},
+                        {'intersection': [0,0,0], 'time': 50, 'speed': [0,0,0,0]},
+                        {'intersection': [0,0,0], 'time': 50, 'speed': [0,0,0,0]},
+                        {'intersection': [0,0,0], 'time': 50, 'speed': [0,0,0,0]}]
 
 
 # line class for skew line approximate intersection
@@ -111,8 +160,8 @@ def filter(unfiltered,lastval,tc,dt):
 tx = 1.525
 ty = 2.73
 
-c1l = [-1.5, 0, 1.09-0.76]#[0, -0.87, 0.29]
-c2l = [-1.65, ty, 1.09-0.76]#[-0.62, 0, 0.1]
+c1l = [-1.55, 0, 1.09-0.76]#[0, -0.87, 0.29]
+c2l = [-2.30, ty/2, 1.09-0.76]#[-0.62, 0, 0.1]
 
 c1t = [tx/2,ty/2,0]  #[0,0,0]
 c2t = [tx/2,ty/2,0]   #[0,0,0]
@@ -140,14 +189,16 @@ trail_points = []
 max_trail_length = 50 
 g1 = None
 gc = None
+gc3 = None
+speedo = None
 vp_lock = threading.Lock()
 
 
 def setup_vpython_vis():
     global tx, ty, ball, g1, gc, camera_1_location, camera_1_direction, camera_2_location
 
-    scene.width = 640  
-    scene.height = 480
+    scene.width = 640*2  
+    scene.height = 480*2
     scene.title = "40+ Tracking"
     scene.background = vec(0.7,0.7,0.7)
 
@@ -166,6 +217,8 @@ def setup_vpython_vis():
     # Initialize camera view lines
     cam1_line.axis = vector(c1d[0],c1d[2],-c1d[1])
     cam2_line.axis = vector(c2d[0],c2d[2],-c2d[1])
+
+
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
 
 def update_vpython_vis(intersection_point, line1, line2):
@@ -191,7 +244,7 @@ def update_vpython_vis(intersection_point, line1, line2):
 
         #for i in range(len(ball_data)):
         times = [dic['time'] for dic in ball_data]
-        speeds = [dic['speed'] for dic in ball_data]
+        speeds = [dic['speed'][3] for dic in ball_data]
         gc.plot(times[-1]/1000,speeds[-1])
         if ball_data[-1]['time'] > 1000:
             g1.xmin = ball_data[-1]['time']/1000 - 5
@@ -292,11 +345,13 @@ async def handle_connection(websocket, path):
 
                 if intersection is not None:
                     int_at_time = int(time.time()*1000) - start_time#-data.get('timestamp', 0)
+
+                    no_points = 2   # index difference between datapoints for speed calculation
                     dt = int_at_time - ball_data[-1]['time']
-                    dt2 = int_at_time - ball_data[-2]['time']
-                    speed = 0
-                    if dt != 0 and dt2 != 0:
-                        speed = dist(intersection,ball_data[-2]['intersection'])/(dt2/1000)
+                    dts = int_at_time - ball_data[-no_points]['time']
+
+                    if dt != 0 and dts != 0:
+                        speed = dist(intersection,ball_data[-no_points]['intersection'])/(dts/1000)
 
                         new_data = {'intersection': intersection, 
                                         'time': int_at_time,
@@ -309,11 +364,18 @@ async def handle_connection(websocket, path):
                             f.write(json.dumps(new_data) + '\n')
 
                         # filter positions 
-                        intersection[0] = filter(intersection[0],ball_data[-1]["intersection"][0],0.2,dt)
+                        intersection[0] = filter(intersection[0],ball_data[-1]["intersection"][0],0.1,dt)
                         intersection[1] = filter(intersection[1],ball_data[-1]["intersection"][1],0.02,dt)
                         intersection[2] = filter(intersection[2],ball_data[-1]["intersection"][2],0.05,dt)
-                        # speed first order filter with 0.05s tc
-                        speed = filter(speed,ball_data[-1]['speed'],0.05,dt)
+
+                        speed = [0,0,0,0]
+
+                        for coordinate in [0,1,2]:
+                            speed[coordinate] = (intersection[coordinate]-ball_data[-no_points]['intersection'][coordinate])/(dts/1000)
+                            speed[coordinate] = filter(speed[coordinate],ball_data[-1]['speed'][coordinate],0.05,dt)
+
+                        speed[3] = dist(intersection,ball_data[-no_points]['intersection'])/(dts/1000)
+                        speed[3] = filter(speed[3],ball_data[-1]['speed'][3],0.05,dt)
 
                         new_data = {'intersection': intersection, 
                                         'time': int_at_time,
@@ -325,7 +387,7 @@ async def handle_connection(websocket, path):
                         with open(file_name, 'a') as f:
                             f.write(json.dumps(new_data) + '\n')
                     
-                    logger.info(f"{round(speed,1)} m/s, ({round(intersection[0],3)}, {round(intersection[1],3)}, {round(intersection[2],3)})")
+                    logger.info(f"{round(speed[3],1)} m/s, ({round(intersection[0],3)}, {round(intersection[1],3)}, {round(intersection[2],3)})")
                 
                                 
                 # Store the data for printing
