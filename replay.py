@@ -112,11 +112,12 @@ g1 = None
 gc = None
 gc2 = None
 gc3 = None
+speedo = None
 vp_lock = threading.Lock()
 
 
 def setup_vpython_vis():
-    global tx, ty, ball, ball2, g1, gc, gc2, gc3, camera_1_location, camera_1_direction, camera_2_location
+    global tx, ty, ball, ball2, g1, gc, gc2, gc3, speedo, camera_1_location, camera_1_direction, camera_2_location
 
     scene.width = 768#640  
     scene.height = 576#480
@@ -130,7 +131,6 @@ def setup_vpython_vis():
     box(pos=vector(tx/2, -0.005, -ty/2), size=vector(tx, 0.01, ty), color=vec(0.7,0.7,1)) # table 2.74, 1.525, 0.05
     box(pos=vector(tx/2, 0.1525/2, -ty/2), size=vector(tx, 0.1525, 0.001), color=vec(1,1,1))
 
-
     #initialize ball (filtered)
     ball = sphere(pos=vector(0, 0, 0), radius=0.021, color=color.orange, make_trail=True, retain=100)
     ball.trail_color = color.orange
@@ -143,10 +143,11 @@ def setup_vpython_vis():
 
     gc3 = curve(color=color.black) #ball trajectory estimation
 
+    speedo = label(pos=vec(tx/2,0,-ty/2), text="Press R to resume", color=color.black, height=30)
 
 
 
-def update_vpython_vis(intersection_point, index, ball, curve, data, re=False):
+def update_vpython_vis(intersection_point, index, ball, curve, data, label, re=False):
 
     if intersection_point == (0, 0, 0):
         return  # Skip invalid points
@@ -160,11 +161,13 @@ def update_vpython_vis(intersection_point, index, ball, curve, data, re=False):
         times = [dic['time'] for dic in data]
         if re:
             speeds = [dic['speed'][3] for dic in data]
-        else:
+        else:  # note: this is for raw/filtered on collection datas collected on 9th Sept or before, speed is updated to a vector afterwards so no need
             speeds = [dic['speed'] for dic in data]
         curve.plot(times[index]/1000,speeds[index])
         if data[index]['time'] > 1000:
             g1.xmin = data[index]['time']/1000 - 5
+
+        label.text=str(round(speeds[index],2))
         
         #except Exception as e:
             #logger.error(f"Error updating VPython visualization: {e}")
@@ -222,14 +225,14 @@ class Bounce:
 
 
 # Read files. note: check if both files are the same length
-with open('data_2025-09-07 16-11-25.json1', 'r') as file:
+with open('data_2025-10-04 17-13-46.json1', 'r') as file:
     ball_data = list(map(json.loads, file))
-with open('data_unfiltered_2025-09-07 16-11-25.json1', 'r') as file:
+with open('data_unfiltered_2025-10-04 17-13-46.json1', 'r') as file:
     ball_data_unfiltered = list(map(json.loads, file))
 
 
 # new dataset to test other filters
-no_points = 4
+no_points = 3   # index difference between datapoints for speed calculation
 #ball_data_re = ball_data_unfiltered[:(no_points+1)] #initialise as first five unfiltered datapoints, in main would be five unknown ones.
 
 ball_data_re = [{'intersection': [0,0,0], 'time': 0, 'speed': [0,0,0,0]},  #note that the fourth number of speed is the magnitude for more convenience
@@ -256,7 +259,7 @@ for i in range(no_points+1,len(ball_data_unfiltered)-1):
     #z = linear_regression_filter(times, zs, ball_data_unfiltered[i+1]['time'])
 
     dt = ball_data_unfiltered[i]['time'] - ball_data_unfiltered[i-1]['time']
-    dt4 = ball_data_unfiltered[i]['time'] - ball_data_unfiltered[i-4]['time']
+    dts = ball_data_unfiltered[i]['time'] - ball_data_unfiltered[i-no_points]['time']
 
     #first order filter
     x = filter(xs[-1],ball_data_re[-1]['intersection'][0],0.1,dt) #xs[-1]
@@ -266,10 +269,10 @@ for i in range(no_points+1,len(ball_data_unfiltered)-1):
     speed = [0,0,0,0]
 
     for coordinate in [0,1,2]:
-        speed[coordinate] = ([x,y,z][coordinate]-ball_data_re[-4]['intersection'][coordinate])/(dt4/1000)
+        speed[coordinate] = ([x,y,z][coordinate]-ball_data_re[-no_points]['intersection'][coordinate])/(dts/1000)
         speed[coordinate] = filter(speed[coordinate],ball_data_re[-1]['speed'][coordinate],0.05,dt)
 
-    speed[3] = dist([x,y,z],ball_data_re[-4]['intersection'])/(dt4/1000)
+    speed[3] = dist([x,y,z],ball_data_re[-no_points]['intersection'])/(dts/1000)
     speed[3] = filter(speed[3],ball_data_re[-1]['speed'][3],0.05,dt)
 
     #x-jump filter (don't add new point if x jumps by more than a threshold difference (to remove large jumps from possible erronous detection), makes the filtered and unfiltered lists different in length so beware)
@@ -290,12 +293,13 @@ start_time = int(time.time()*1000)
 
 setup_vpython_vis()
 
-i_start = 40000 #2500 for 09-04#2, 30000 for 09-04#1, 11500 for 09-02
+i_start = 26000 #2500 for 09-04#2, 30000 for 09-04#1, 11500 for 09-02
 i_end = len(ball_data) #note: this cuts visualisation immediately, to pause use ctrl c in terminal
 i = i_start # start index
 fast_forward = False
 
-pause = False
+pause = True
+time_paused = int(time.time()*1000) # Additional def of time_paused here so code starts paused for easier use
 now_time = ball_data_re[i_start]['time']
 play_time = now_time
 pause_time = now_time
@@ -319,19 +323,19 @@ while i < i_end:
 
         if not fast_forward:
             if ball_data_re[i]['time'] < now_time:
-                update_vpython_vis(ball_data_re[i]['intersection'], index=i, data=ball_data_re, ball=ball, curve=gc, re=True)
-                #update_vpython_vis(ball_data_unfiltered[i]['intersection'], index=i, ball=ball2, curve=gc2, data=ball_data_unfiltered) #times between the two sets match
+                update_vpython_vis(ball_data_re[i]['intersection'], index=i, data=ball_data_re, ball=ball, curve=gc, label=speedo, re=True)
+                #update_vpython_vis(ball_data_unfiltered[i]['intersection'], index=i, ball=ball2, curve=gc2, data=ball_data_unfiltered, label=speedo) #times between the two sets match
                 update_vpython_traj_projection(ball_data_re[i]['intersection'],ball_data_re[i]['speed'])
                 i += 1
         else:
-            update_vpython_vis(ball_data_re[i]['intersection'], index=i, data=ball_data_re, ball=ball, curve=gc, re=True)
+            update_vpython_vis(ball_data_re[i]['intersection'], index=i, data=ball_data_re, ball=ball, curve=gc, label=speedo, re=True)
             #update_vpython_vis(ball_data_unfiltered[i]['intersection'], index=i, ball=ball2, curve=gc2, data=ball_data_unfiltered) #times between the two sets match
             update_vpython_traj_projection(ball_data_re[i]['intersection'],ball_data_re[i]['speed'])
             i += 5
         #start_time += int(time.time()*1000)-(now_time+start_time)
         #start_time = int(time.time()*1000) - pause_time
     #print(now_time)
-    print(f"start: {round(start_time,2)}, now: {round(now_time/1000,2)}, record time: {round(ball_data_re[i]['time']/1000,2)}, index = {i}, paused = {pause}, speed = ({round(ball_data_re[i]['speed'][0],2)},{round(ball_data_re[i]['speed'][1],2)},{round(ball_data_re[i]['speed'][2],2)})")
+    print(f"now: {round(now_time/1000,2)}, record time: {round(ball_data_re[i]['time']/1000,2)}, index = {i}, paused = {pause}, speed = ({round(ball_data_re[i]['speed'][0],2)},{round(ball_data_re[i]['speed'][1],2)},{round(ball_data_re[i]['speed'][2],2)})")
 
 
 
