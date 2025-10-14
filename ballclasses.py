@@ -48,7 +48,7 @@ ty = 2.73
 class Ballreader:
     global ty
 
-    def __init__(self, data, n=4):
+    def __init__(self, data, n=4, direction=1):
         self.n = n # no. of points to countback for calculations
         self.data = data[:-n] # when initializing, last n points are inserted as 
         self.type = "none" # "none" at init, then "else", "to recieve - after bounce" and "to recieve - before bounce" (i.e. flying towards machine)
@@ -61,15 +61,17 @@ class Ballreader:
         self.reftraj = Bounce(p0,v0) # reference trajectory to compare to
         self.bounce_lock = False
 
+        self.direction = direction #determines side on which machine is located. 1 or -1, 1 is default i.e. on origin side
+
 
     def typeset(self, p, v):
         ycounter = 0
         for i in range(len(self.data)):
-            if self.data[i]['speed'][1] < 0:
+            if self.direction*self.data[i]['speed'][1] < 0:
                 ycounter += 1  # if the condition above is true for all 5 points (i.e. neg. y velocity for all five points, i.e. travelling to play area, ycounter = n)
-        if v[1] < 0:
+        if self.direction*v[1] < 0:
             ycounter += 1
-        if v[1] < 0 and Bounce(p,v).pfirstbounce()[1] < ty:
+        if self.direction*v[1] < 0 and self.direction*Bounce(p,v).pfirstbounce()[1] < self.direction*ty:
         #if ycounter == self.n - 1 and Bounce(p,v).pfirstbounce()[1] < ty:
             if self.data[-1]['speed'][2] < 0 and v[2] > 0: # bounce - changing from negative in z to positive in z
                 self.type = "to recieve - after bounce"
