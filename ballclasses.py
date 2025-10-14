@@ -78,8 +78,6 @@ class Ballreader:
                 self.bounce_lock = True  # locks self.type to after bounce after bounce until ball is returned
             elif self.bounce_lock == False:
                 self.type = "to recieve - before bounce"
-            else:
-                self.type = "returned"
         else:
             self.type = "returned"
             self.bounce_lock = False
