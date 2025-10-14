@@ -13,6 +13,8 @@ from sklearn.linear_model import LinearRegression
 
 import keyboard
 
+# my own classes
+from ballclasses import Bounce, Ballreader
 
 
 class Line:
@@ -159,6 +161,7 @@ def update_vpython_vis(intersection_point, index, ball, curve, data, label, re=F
 
         #for i in range(len(ball_data)):
         times = [dic['time'] for dic in data]
+        types = [dic['type'] for dic in data]
         if re:
             speeds = [dic['speed'][3] for dic in data]
         else:  # note: this is for raw/filtered on collection datas collected on 9th Sept or before, speed is updated to a vector afterwards so no need
@@ -167,7 +170,8 @@ def update_vpython_vis(intersection_point, index, ball, curve, data, label, re=F
         if data[index]['time'] > 1000:
             g1.xmin = data[index]['time']/1000 - 5
 
-        label.text=str(round(speeds[index],2))
+        #label.text=str(round(speeds[index],2)) # speed
+        label.text = types[index]
         
         #except Exception as e:
             #logger.error(f"Error updating VPython visualization: {e}")
@@ -187,59 +191,28 @@ def update_vpython_traj_projection(p,v):
         gc3.append(pos=vector(point[0],point[2],-point[1]))
 
 
-
-class Bounce:
-    def __init__(self,p,v):
-        self.p = p
-        self.v = v
-
-    def traj_single(self, t):
-        x = self.p[0]+t*self.v[0]
-        y = self.p[1]+t*self.v[1]
-        z = self.p[2]+t*self.v[2]-0.5*9.81*t**2
-        return [x,y,z]
-
-    def firstbouncet(self):
-        discrim = (self.v[2])**2+4*0.5*9.81*self.p[2]
-        if discrim < 0:
-            return 0
-        else:
-            numer = self.v[2]+sqrt(discrim)
-            denom = 2*0.5*9.81
-            return numer/denom
-    
-    def pfirstbounce(self):
-        return self.traj_single(self.firstbouncet())
-    
-    def traj_second(self,t):
-        eball = 0.949 # empirical estimation of ball coeff of restitution
-        Bounce2 = Bounce(self.pfirstbounce(),[self.v[0],self.v[1],eball**2 * abs(self.v[2]-9.81*self.firstbouncet())])
-        return Bounce2.traj_single(t)
-    
-    def traj(self,t):
-        if t < self.firstbouncet():
-            return self.traj_single(t)
-        else:
-            return self.traj_second(t-self.firstbouncet())
         
 
+i_start = 40000 #40000 (from unmodified file) for 09-07, 2500 for 09-04#2, 30000 for 09-04#1, 11500 for 09-02
 
 # Read files. note: check if both files are the same length
-with open('data_2025-10-04 17-13-46.json1', 'r') as file:
-    ball_data = list(map(json.loads, file))
-with open('data_unfiltered_2025-10-04 17-13-46.json1', 'r') as file:
-    ball_data_unfiltered = list(map(json.loads, file))
+with open('data_2025-09-07 16-11-25.json1', 'r') as file:
+    ball_data = list(map(json.loads, file))[i_start:]
+with open('data_unfiltered_2025-09-07 16-11-25.json1', 'r') as file:
+    ball_data_unfiltered = list(map(json.loads, file))[i_start:]
 
 
 # new dataset to test other filters
 no_points = 3   # index difference between datapoints for speed calculation
 #ball_data_re = ball_data_unfiltered[:(no_points+1)] #initialise as first five unfiltered datapoints, in main would be five unknown ones.
 
-ball_data_re = [{'intersection': [0,0,0], 'time': 0, 'speed': [0,0,0,0]},  #note that the fourth number of speed is the magnitude for more convenience
-                {'intersection': [0,0,0], 'time': 10, 'speed': [0,0,0,0]},
-                {'intersection': [0,0,0], 'time': 20, 'speed': [0,0,0,0]},
-                {'intersection': [0,0,0], 'time': 30, 'speed': [0,0,0,0]},
-                {'intersection': [0,0,0], 'time': 40, 'speed': [0,0,0,0]}]
+ball_data_re = [{'intersection': [0,0,0], 'time': 0, 'speed': [0,0,0,0], 'type': "none", 'spin': "none"},  #note that the fourth number of speed is the magnitude for more convenience
+                {'intersection': [0,0,0], 'time': 10, 'speed': [0,0,0,0], 'type': "none", 'spin': "none"},
+                {'intersection': [0,0,0], 'time': 20, 'speed': [0,0,0,0], 'type': "none", 'spin': "none"},
+                {'intersection': [0,0,0], 'time': 30, 'speed': [0,0,0,0], 'type': "none", 'spin': "none"},
+                {'intersection': [0,0,0], 'time': 40, 'speed': [0,0,0,0], 'type': "none", 'spin': "none"}]
+
+ball_read = Ballreader(ball_data_re)
 
 def linear_regression_filter(xdata,ydata,x_extrapolate):
     x = np.array(xdata).reshape((-1,1))
@@ -275,34 +248,43 @@ for i in range(no_points+1,len(ball_data_unfiltered)-1):
     speed[3] = dist([x,y,z],ball_data_re[-no_points]['intersection'])/(dts/1000)
     speed[3] = filter(speed[3],ball_data_re[-1]['speed'][3],0.05,dt)
 
+    ball_read.update(ball_data_re, [x,y,z], speed, ball_data_unfiltered[i]['time'])
+
     #x-jump filter (don't add new point if x jumps by more than a threshold difference (to remove large jumps from possible erronous detection), makes the filtered and unfiltered lists different in length so beware)
     x_jump = abs(x-ball_data_re[-1]['intersection'][0])
     if x_jump < 1000:
         new_data = {'intersection': [x,y,z], 
                     'time': ball_data_unfiltered[i]['time'],
-                    'speed': speed}   
+                    'speed': speed,
+                    'type': ball_read.type,
+                    'spin': ball_read.spin}   # temporary placeholders, need to change logic of ballreader to handle new pos. before appending data
         ball_data_re.append(new_data)
 
 
-    print("calculating")
+
+    print("calculating, ", round(100*i/(len(ball_data_unfiltered)-1),0), "%")
 print("done")
 
 
 
-start_time = int(time.time()*1000)
+
 
 setup_vpython_vis()
 
-i_start = 26000 #2500 for 09-04#2, 30000 for 09-04#1, 11500 for 09-02
+
+
 i_end = len(ball_data) #note: this cuts visualisation immediately, to pause use ctrl c in terminal
-i = i_start # start index
+i = 0 # start index
 fast_forward = False
 
 pause = True
 time_paused = int(time.time()*1000) # Additional def of time_paused here so code starts paused for easier use
-now_time = ball_data_re[i_start]['time']
+now_time = ball_data[0]['time'] # this cannot be ball_data_re, as with the new file read method (ball_data file read itself is truncated) first time datum is not 0
 play_time = now_time
 pause_time = now_time
+
+started = False
+start_time = int(time.time()*1000)
 
 while i < i_end:
     
@@ -312,13 +294,16 @@ while i < i_end:
         pause = True
         
     elif keyboard.is_pressed('r'):
+        #if not started:
+        #    start_time = int(time.time()*1000) idea is to log start time only when r is pressed, but doens't work yet
+        #    started = True
         if pause:
             pause_time = int(time.time()*1000)-time_paused
             start_time += pause_time
         pause = False
 
     if not pause:
-        now_time = int(time.time()*1000)-start_time+ball_data_re[i_start]['time']
+        now_time = int(time.time()*1000)-start_time+ball_data[0]['time']
         #now_time += (int(time.time()*1000)-start_time)+now_time
 
         if not fast_forward:
@@ -335,7 +320,7 @@ while i < i_end:
         #start_time += int(time.time()*1000)-(now_time+start_time)
         #start_time = int(time.time()*1000) - pause_time
     #print(now_time)
-    print(f"now: {round(now_time/1000,2)}, record time: {round(ball_data_re[i]['time']/1000,2)}, index = {i}, paused = {pause}, speed = ({round(ball_data_re[i]['speed'][0],2)},{round(ball_data_re[i]['speed'][1],2)},{round(ball_data_re[i]['speed'][2],2)})")
+    print(f"now: {round(now_time/1000,2)}, record time: {round(ball_data_re[i]['time']/1000,2)}, index = {i}, paused = {pause}, speed = ({round(ball_data_re[i]['speed'][0],2)},{round(ball_data_re[i]['speed'][1],2)},{round(ball_data_re[i]['speed'][2],2)}), type = {ball_data_re[i]['type']}")
 
 
 
