@@ -43,6 +43,10 @@ import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 import java.util.concurrent.TimeUnit;
 
+// Camera2 API specific imports
+import android.hardware.camera2.CameraCaptureSession;
+import android.hardware.camera2.CaptureRequest;
+
 public class ColorBlobDetectionActivity extends CameraActivity implements OnTouchListener, CvCameraViewListener2 {
     private static final String  TAG              = "OCVSample::Activity";
 
@@ -57,11 +61,17 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
     private WebSocketClient webSocketClient;
     private long lastSendTime = 0;
-    private static final long SEND_INTERVAL_MS = 10; // Send every 50ms (20Hz)
+    private static final long SEND_INTERVAL_MS = 10; // Send every 10ms (100Hz)
 
-    private CameraBridgeViewBase mOpenCvCameraView;
+    // Switched to JavaCamera2View to enable low-level sensor settings access
+    private org.opencv.android.JavaCamera2View mOpenCvCameraView;
 
-    private static final int camera = 2; // change this to switch between camera versions
+    private static final int camera = 1; // change this to switch between camera versions
+
+    // User tweakable manual camera variables
+    private int mExposureTimeDenominator = 500; // Default to 1/500s exposure speed to lock motion
+    private int mIsoValue = 800;                 // Higher ISO compensates for dark frames under fast exposure
+    private boolean mExposureSettingsApplied = false;
 
     public ColorBlobDetectionActivity() {
         Log.i(TAG, "Instantiated new " + this.getClass());
@@ -86,7 +96,8 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
         setContentView(R.layout.color_blob_detection_surface_view);
 
-        mOpenCvCameraView = (CameraBridgeViewBase) findViewById(R.id.color_blob_detection_activity_surface_view);
+        // Bind view and ensure your activity layout XML uses org.opencv.android.JavaCamera2View
+        mOpenCvCameraView = (org.opencv.android.JavaCamera2View) findViewById(R.id.color_blob_detection_activity_surface_view);
         mOpenCvCameraView.setVisibility(SurfaceView.VISIBLE);
         mOpenCvCameraView.setCvCameraViewListener(this);
     }
@@ -123,14 +134,13 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         disconnectWebSocket();
     }
 
-    @SuppressLint("StaticFieldLeak") // given way to suppress memory leak issue (could lead to further issues?)
+    @SuppressLint("StaticFieldLeak")
     private void connectWebSocket() {
-        // Run WebSocket connection in background thread
         new AsyncTask<Void, Void, Void>() {
             @Override
             protected Void doInBackground(Void... params) {
                 try {
-                    URI serverUri = new URI("ws://10.149.167.117:8765"); // Change to your server IP
+                    URI serverUri = new URI("ws://10.79.201.117:8765"); // Change to your server IP
                     webSocketClient = new WebSocketClient(serverUri) {
                         @Override
                         public void onOpen(ServerHandshake handshakedata) {
@@ -153,10 +163,8 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                         }
                     };
 
-                    // Set connection timeout
                     webSocketClient.connect();
 
-                    // Wait for connection with timeout
                     int timeoutMs = 5000;
                     long startTime = System.currentTimeMillis();
                     while (!webSocketClient.isOpen() &&
@@ -175,7 +183,6 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                         Log.e(TAG, "WebSocket connection failed or timed out");
                     }
 
-
                 } catch (URISyntaxException e) {
                     Log.e(TAG, "Invalid WebSocket URI: " + e.getMessage());
                 }
@@ -191,7 +198,6 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         }
     }
 
-
     public void onCameraViewStarted(int width, int height) {
         mRgba = new Mat(height, width, CvType.CV_8UC4);
         mDetector = new ColorBlobDetector();
@@ -200,13 +206,96 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         mBlobColorHsv = new Scalar(255);
         SPECTRUM_SIZE = new Size(200, 64);
         CONTOUR_COLOR = new Scalar(255,0,0,255);
+        mExposureSettingsApplied = false; // Reset settings state to hook new session
     }
 
     public void onCameraViewStopped() {
         mRgba.release();
     }
 
+    /**
+     * Intercepts underlying JavaCamera2View variables via reflection to configure manual sensor specs.
+     */
+    private void applyManualCameraSettings() {
+        try {
+            CameraCaptureSession captureSession = null;
+            CaptureRequest.Builder builder = null;
+
+            // FIX: Search the JavaCamera2View class directly, NOT the superclass
+            java.lang.reflect.Field[] fields = mOpenCvCameraView.getClass().getDeclaredFields();
+            for (java.lang.reflect.Field field : fields) {
+                field.setAccessible(true);
+                if (field.getType() == CameraCaptureSession.class) {
+                    captureSession = (CameraCaptureSession) field.get(mOpenCvCameraView);
+                } else if (field.getType() == CaptureRequest.Builder.class) {
+                    builder = (CaptureRequest.Builder) field.get(mOpenCvCameraView);
+                }
+            }
+
+            // Session might take a few frames to initialize asynchronously
+            if (captureSession != null && builder != null) {
+
+                // 1. Turn off internal Auto-Exposure
+                builder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF);
+
+                // 2. Depending on the device manufacturer (like Google Pixel), you may also need to
+                // disable global auto-controls for the manual sensor values to be respected.
+                // Uncomment the line below if it still auto-adjusts after fixing the reflection:
+                // builder.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_OFF);
+
+                // 3. Target exposure time calculation (1 second = 1,000,000,000 nanoseconds)
+                long exposureTimeNs = 1000000000L / mExposureTimeDenominator;
+                builder.set(CaptureRequest.SENSOR_EXPOSURE_TIME, exposureTimeNs);
+
+                // 4. Target Sensitivity
+                builder.set(CaptureRequest.SENSOR_SENSITIVITY, mIsoValue);
+
+                // 5. Push configuration updates directly back into active repeating preview thread
+                captureSession.setRepeatingRequest(builder.build(), null, null);
+                mExposureSettingsApplied = true;
+                Log.i(TAG, "Camera2 Overrides Engaged -> Exposure: 1/" + mExposureTimeDenominator + "s | ISO: " + mIsoValue);
+            } else {
+                Log.e(TAG, "Reflection failed: Could not find CameraCaptureSession or Builder in JavaCamera2View.");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Reflection tracking configuration update failure: " + e.getMessage());
+        }
+    }
+
     public boolean onTouch(View v, MotionEvent event) {
+        float screenX = event.getX();
+        float screenY = event.getY();
+        float screenWidth = mOpenCvCameraView.getWidth();
+        float screenHeight = mOpenCvCameraView.getHeight();
+
+        // Top 150-pixel row of the device acts as an interactive configuration utility dashboard
+        if (screenY < 150) {
+            if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                if (screenX < screenWidth * 0.25) {
+                    mExposureTimeDenominator = Math.max(30, mExposureTimeDenominator - 50); // Elongates exposure
+                } else if (screenX < screenWidth * 0.5) {
+                    mExposureTimeDenominator = Math.min(4000, mExposureTimeDenominator + 50); // Quickens exposure (eliminates blur)
+                } else if (screenX < screenWidth * 0.75) {
+                    mIsoValue = Math.max(100, mIsoValue - 50); // Lower gain (less noise)
+                } else {
+                    mIsoValue = Math.min(3200, mIsoValue + 50); // Higher gain (brighter frame)
+                }
+
+                mExposureSettingsApplied = false; // Mark configuration dirty to enforce reload on next frame loop
+
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Toast.makeText(ColorBlobDetectionActivity.this,
+                                "Tuned -> Exposure: 1/" + mExposureTimeDenominator + "s | ISO: " + mIsoValue,
+                                Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+            return true;
+        }
+
+        // Standard touch color parsing logic sequence remains unchanged
         int cols = mRgba.cols();
         int rows = mRgba.rows();
 
@@ -233,7 +322,6 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         Mat touchedRegionHsv = new Mat();
         Imgproc.cvtColor(touchedRegionRgba, touchedRegionHsv, Imgproc.COLOR_RGB2HSV_FULL);
 
-        // Calculate average color of touched region
         mBlobColorHsv = Core.sumElems(touchedRegionHsv);
         int pointCount = touchedRect.width*touchedRect.height;
         for (int i = 0; i < mBlobColorHsv.val.length; i++)
@@ -244,32 +332,26 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         Log.i(TAG, "Touched rgba color: (" + mBlobColorRgba.val[0] + ", " + mBlobColorRgba.val[1] +
                 ", " + mBlobColorRgba.val[2] + ", " + mBlobColorRgba.val[3] + ")");
 
-        Log.i(TAG, "" + mBlobColorHsv);
-
         mDetector.setHsvColor(mBlobColorHsv);
-
         Imgproc.resize(mDetector.getSpectrum(), mSpectrum, SPECTRUM_SIZE, 0, 0, Imgproc.INTER_LINEAR_EXACT);
-
         mIsColorSelected = true;
 
         touchedRegionRgba.release();
         touchedRegionHsv.release();
 
-        return false; // don't need subsequent touch events
+        return false;
     }
 
     private void sendBallData(double nx, double ny, int detected) {
         long currentTime = System.currentTimeMillis();
         if (currentTime - lastSendTime < SEND_INTERVAL_MS) {
-            return; // Throttle sending to avoid overloading
+            return;
         }
 
         lastSendTime = currentTime;
 
-
         if (webSocketClient != null && webSocketClient.isOpen()) {
             try {
-                // Create JSON data
                 String jsonData = String.format(
                         "{\"ballAxes\": {\"nx\": %.4f, \"ny\": %.4f}, " +
                                 "\"timestamp\": %d, " +
@@ -278,7 +360,6 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                         nx, ny, currentTime, detected, camera
                 );
 
-                // Send in background thread to avoid blocking camera frame processing
                 new AsyncTask<String, Void, Void>() {
                     @Override
                     protected Void doInBackground(String... data) {
@@ -294,22 +375,20 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
     }
 
     public Mat onCameraFrame(CvCameraViewFrame inputFrame) {
-        mRgba = inputFrame.rgba();
+        // Intercept frame pipeline loop to inject hardware overrides if configurations were altered
+        if (!mExposureSettingsApplied) {
+            applyManualCameraSettings();
+        }
 
+        mRgba = inputFrame.rgba();
 
         double viewWidth = mRgba.cols();
         double viewHeight = mRgba.rows();
 
-
-        // Testing camera location - origin is left corner of table
-        // First try using desmos projection representation of camera view
-        // Values can later be informed by either checkerboard calibration, table detection or kept hardcoded for rigid mounting
-
-        // view rotation angles based on https://www.desmos.com/calculator/efc34da5b9?lang=zh-TW convention
         double[] ss = new double[] {-1.57, 0};
         double[] us = new double[] {0.27, 0.237};
-        double s = ss[camera-1]; // actual table camera 1: -0.391, camera 2: 0.391
-        double u = us[camera-1]; // actual table camera 1: 0.177, camera 2: 0.177
+        double s = ss[camera-1];
+        double u = us[camera-1];
 
         Point normalised = new Point(0,0);
         int detected = 0;
@@ -323,61 +402,40 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
             Scalar maskCount = Core.sumElems(mask);
             double maskSum = maskCount.val[0]/255;
 
-
-            //Log.i(TAG, "Contours count: " + contours.size());
-
             for (MatOfPoint contour : contours) {
                 Point[] points = contour.toArray();
-
 
                 if (points.length > 0) {
                     detected = 1;
                     MatOfPoint2f contour2f = new MatOfPoint2f(points);
-                    // Calculate minimum enclosing circle
                     Point center = new Point();
                     float[] radius = new float[1];
                     Imgproc.minEnclosingCircle(contour2f, center, radius);
 
-                    // Draw the center point and enclosing circle
-                    Imgproc.circle(mRgba, center, 5, new Scalar(0, 255, 0, 255), -1); // Green filled circle
-                    Imgproc.circle(mRgba, center, (int)radius[0], new Scalar(0, 255, 0, 255), 2); // Green circle outlin
+                    Imgproc.circle(mRgba, center, 5, new Scalar(0, 255, 0, 255), -1);
+                    Imgproc.circle(mRgba, center, (int)radius[0], new Scalar(0, 255, 0, 255), 2);
 
-                    // Center coordinates with offset:
                     Point centered = new Point();
-
                     centered.x = center.x - viewWidth /2;
                     centered.y = -(center.y - viewHeight /2);
-                    //Log.i(TAG, "Offset center: (" + centered.x + ", " + centered.y + ")");
 
-                    // xy normalisation - check
-                    double[] sensorHorViewAngle = new double[] {68.2, 65.3}; // sensor stats: 71.6, 68.3, these are empirical to remove the need for correction factors
+                    double[] sensorHorViewAngle = new double[] {68.2, 65.3};
                     double xbcv = tan(0.5*sensorHorViewAngle[camera-1]*3.1416/180);
-                    double ybcv = xbcv/(viewWidth/viewHeight); // 1.787 is screen aspect ratio
+                    double ybcv = xbcv/(viewWidth/viewHeight);
 
                     normalised.x = (2*xbcv*centered.x)/viewWidth;
                     normalised.y = (2*ybcv*centered.y)/viewHeight;
-                    //Log.i(TAG, "Normalised ball center: (" + normalised.x + ", " + normalised.y + ")");
 
-                    // Update local ball view roll and pitch
-                    //Log.i(TAG, "thetaHor: " + thetaHor + ", thetaVer: " + thetaVer);
-
-
-                    // Draw ball axes information on screen for debugging
                     String axesTextB = String.format("Ball view vector local normalised coords: (%.2f, %.2f)",
                             normalised.x, normalised.y);
                     Imgproc.putText(mRgba, axesTextB, new Point(50, 200),
                             Imgproc.FONT_HERSHEY_SIMPLEX, 0.7, new Scalar(255, 255, 255, 255), 2);
 
-                    // Draw ball axes information on screen for debugging
                     String axesTextC = String.format("Screensize: (%.2f, %.2f)",
                             viewWidth, viewHeight);
                     Imgproc.putText(mRgba, axesTextC, new Point(50, 150),
                             Imgproc.FONT_HERSHEY_SIMPLEX, 0.7, new Scalar(255, 255, 255, 255), 2);
-
                 }
-
-
-
             }
 
             Mat colorLabel = mRgba.submat(4, 68, 4, 68);
@@ -390,13 +448,17 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                     maskSum);
             Imgproc.putText(mRgba, axesTextD, new Point(50, 250),
                     Imgproc.FONT_HERSHEY_SIMPLEX, 0.7, new Scalar(255, 255, 255, 255), 2);
-
         }
 
         sendBallData(normalised.x, normalised.y, detected);
 
-        // View placement assists
-        Imgproc.circle(mRgba, new Point(viewWidth / 2, viewHeight / 2), (int) 10, new Scalar(0, 255, 0, 255), 2);
+        // HUD overlay displaying real-time manual control status parameters
+        String camera2SettingsHud = String.format("MANUAL CAMERA2 [Tap top to tune] -> Exp: 1/%ds | ISO: %d",
+                mExposureTimeDenominator, mIsoValue);
+        Imgproc.putText(mRgba, camera2SettingsHud, new Point(50, 100),
+                Imgproc.FONT_HERSHEY_SIMPLEX, 0.7, new Scalar(0, 165, 255, 255), 2);
+
+        Imgproc.circle(mRgba, new Point(viewWidth / 2, viewHeight / 2), 10, new Scalar(0, 255, 0, 255), 2);
         Imgproc.circle(mRgba, new Point(viewWidth / 2, viewHeight / 2), 5, new Scalar(0, 255, 0, 255), -1);
         Imgproc.line(mRgba,new Point(viewWidth/2,viewHeight/2),new Point(viewWidth/2,viewHeight),new Scalar(0, 255, 0, 255), 1);
 
@@ -407,7 +469,6 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         Mat pointMatRgba = new Mat();
         Mat pointMatHsv = new Mat(1, 1, CvType.CV_8UC3, hsvColor);
         Imgproc.cvtColor(pointMatHsv, pointMatRgba, Imgproc.COLOR_HSV2RGB_FULL, 4);
-
         return new Scalar(pointMatRgba.get(0, 0));
     }
 }
