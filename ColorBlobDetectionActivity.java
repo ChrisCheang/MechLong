@@ -69,8 +69,8 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
     private static final int camera = 1; // change this to switch between camera versions
 
     // User tweakable manual camera variables
-    private int mExposureTimeDenominator = 500; // Default to 1/500s exposure speed to lock motion
-    private int mIsoValue = 800;                 // Higher ISO compensates for dark frames under fast exposure
+    private int mExposureTimeDenominator = 1500; // Default to 1/500s exposure speed to lock motion
+    private int mIsoValue = 2400;                 // Higher ISO compensates for dark frames under fast exposure
     private boolean mExposureSettingsApplied = false;
 
     public ColorBlobDetectionActivity() {
@@ -140,7 +140,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
             @Override
             protected Void doInBackground(Void... params) {
                 try {
-                    URI serverUri = new URI("ws://10.79.201.117:8765"); // Change to your server IP
+                    URI serverUri = new URI("ws://10.127.253.117:8765"); // Change to your server IP
                     webSocketClient = new WebSocketClient(serverUri) {
                         @Override
                         public void onOpen(ServerHandshake handshakedata) {
