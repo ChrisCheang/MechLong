@@ -41,7 +41,9 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
-import java.util.concurrent.TimeUnit;
+
+// Concurrency imports for latency reduction
+import java.util.concurrent.atomic.AtomicReference;
 
 // Camera2 API specific imports
 import android.hardware.camera2.CameraCaptureSession;
@@ -63,15 +65,23 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
     private long lastSendTime = 0;
     private static final long SEND_INTERVAL_MS = 10; // Send every 10ms (100Hz)
 
+    // Low-latency persistent networking architecture
+    private final AtomicReference<String> pendingPayload = new AtomicReference<>();
+    private volatile boolean isTransferThreadRunning = false;
+
     // Switched to JavaCamera2View to enable low-level sensor settings access
     private org.opencv.android.JavaCamera2View mOpenCvCameraView;
 
-    private static final int camera = 1; // change this to switch between camera versions
+    private static final int camera = 2; // change this to switch between camera versions
 
     // User tweakable manual camera variables
     private int mExposureTimeDenominator = 1500; // Default to 1/500s exposure speed to lock motion
     private int mIsoValue = 2400;                 // Higher ISO compensates for dark frames under fast exposure
     private boolean mExposureSettingsApplied = false;
+
+    // User tweakable image resolution variables (default 1080p, 16:9 aspect ratio)
+    private int mMaxWidth = 1920;
+    private int mMaxHeight = 1080;
 
     public ColorBlobDetectionActivity() {
         Log.i(TAG, "Instantiated new " + this.getClass());
@@ -99,6 +109,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         // Bind view and ensure your activity layout XML uses org.opencv.android.JavaCamera2View
         mOpenCvCameraView = (org.opencv.android.JavaCamera2View) findViewById(R.id.color_blob_detection_activity_surface_view);
         mOpenCvCameraView.setVisibility(SurfaceView.VISIBLE);
+        mOpenCvCameraView.setMaxFrameSize(mMaxWidth, mMaxHeight);
         mOpenCvCameraView.setCvCameraViewListener(this);
     }
 
@@ -179,6 +190,22 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
                     if (webSocketClient.isOpen()) {
                         Log.i(TAG, "WebSocket connected successfully");
+
+                        // Boot up persistent background thread to eliminate AsyncTask network jitter
+                        isTransferThreadRunning = true;
+                        new Thread(new Runnable() {
+                            @Override
+                            public void run() {
+                                while (isTransferThreadRunning) {
+                                    String dataToSend = pendingPayload.getAndSet(null);
+                                    if (dataToSend != null && webSocketClient != null && webSocketClient.isOpen()) {
+                                        webSocketClient.send(dataToSend);
+                                    }
+                                    try { Thread.sleep(5); } catch (InterruptedException e) { break; }
+                                }
+                            }
+                        }).start();
+
                     } else {
                         Log.e(TAG, "WebSocket connection failed or timed out");
                     }
@@ -192,6 +219,7 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
     }
 
     private void disconnectWebSocket() {
+        isTransferThreadRunning = false;
         if (webSocketClient != null) {
             webSocketClient.close();
             webSocketClient = null;
@@ -238,10 +266,8 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                 // 1. Turn off internal Auto-Exposure
                 builder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF);
 
-                // 2. Depending on the device manufacturer (like Google Pixel), you may also need to
-                // disable global auto-controls for the manual sensor values to be respected.
-                // Uncomment the line below if it still auto-adjusts after fixing the reflection:
-                // builder.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_OFF);
+                // 2. Disable global auto-controls to prevent sensor pipeline processing delays
+                builder.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_OFF);
 
                 // 3. Target exposure time calculation (1 second = 1,000,000,000 nanoseconds)
                 long exposureTimeNs = 1000000000L / mExposureTimeDenominator;
@@ -254,6 +280,22 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                 captureSession.setRepeatingRequest(builder.build(), null, null);
                 mExposureSettingsApplied = true;
                 Log.i(TAG, "Camera2 Overrides Engaged -> Exposure: 1/" + mExposureTimeDenominator + "s | ISO: " + mIsoValue);
+
+                // Reduction of buffer queue size to 2 via reflection on OpenCV's internal ImageReader
+                try {
+                    java.lang.reflect.Field readerField = mOpenCvCameraView.getClass().getDeclaredField("mImageReader");
+                    readerField.setAccessible(true);
+                    android.media.ImageReader reader = (android.media.ImageReader) readerField.get(mOpenCvCameraView);
+                    if (reader != null) {
+                        java.lang.reflect.Field maxImagesField = android.media.ImageReader.class.getDeclaredField("mMaxImages");
+                        maxImagesField.setAccessible(true);
+                        maxImagesField.setInt(reader, 2);
+                        Log.i(TAG, "Buffer queue size forced to 2 via reflection");
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Reflection for buffer queue size reduction failed: " + e.getMessage());
+                }
+
             } else {
                 Log.e(TAG, "Reflection failed: Could not find CameraCaptureSession or Builder in JavaCamera2View.");
             }
@@ -291,6 +333,39 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                                 Toast.LENGTH_SHORT).show();
                     }
                 });
+            }
+            return true;
+        }
+
+        // Bottom left configuration utility dashboard (Resolution adjustment maintaining 16:9 aspect ratio)
+        if (screenY > screenHeight - 150 && screenX < screenWidth * 0.5) {
+            if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                // Cycle 16:9 resolutions: 1080p -> 720p -> 360p -> 1080p
+                if (mMaxHeight == 1080) {
+                    mMaxWidth = 1280;
+                    mMaxHeight = 720;
+                } else if (mMaxHeight == 720) {
+                    mMaxWidth = 640;
+                    mMaxHeight = 360;
+                } else {
+                    mMaxWidth = 1920;
+                    mMaxHeight = 1080;
+                }
+
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Toast.makeText(ColorBlobDetectionActivity.this,
+                                "Resolution Tuned -> " + mMaxWidth + "x" + mMaxHeight,
+                                Toast.LENGTH_SHORT).show();
+                    }
+                });
+
+                // Apply resolution by restarting the camera stream
+                mOpenCvCameraView.disableView();
+                mOpenCvCameraView.setMaxFrameSize(mMaxWidth, mMaxHeight);
+                mOpenCvCameraView.enableView();
+                mExposureSettingsApplied = false; // Enforce manual sensor settings reload
             }
             return true;
         }
@@ -351,26 +426,16 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
         lastSendTime = currentTime;
 
         if (webSocketClient != null && webSocketClient.isOpen()) {
-            try {
-                String jsonData = String.format(
-                        "{\"ballAxes\": {\"nx\": %.4f, \"ny\": %.4f}, " +
-                                "\"timestamp\": %d, " +
-                                "\"detected\": %d, " +
-                                "\"source\": %d}",
-                        nx, ny, currentTime, detected, camera
-                );
+            String jsonData = String.format(
+                    "{\"ballAxes\": {\"nx\": %.4f, \"ny\": %.4f}, " +
+                            "\"timestamp\": %d, " +
+                            "\"detected\": %d, " +
+                            "\"source\": %d}",
+                    nx, ny, currentTime, detected, camera
+            );
 
-                new AsyncTask<String, Void, Void>() {
-                    @Override
-                    protected Void doInBackground(String... data) {
-                        webSocketClient.send(data[0]);
-                        return null;
-                    }
-                }.execute(jsonData);
-
-            } catch (Exception e) {
-                Log.e(TAG, "Error sending WebSocket data: " + e.getMessage());
-            }
+            // Instantly transfer payload to the persistent thread (O(1) non-blocking operation)
+            pendingPayload.set(jsonData);
         }
     }
 
@@ -412,9 +477,6 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                     float[] radius = new float[1];
                     Imgproc.minEnclosingCircle(contour2f, center, radius);
 
-                    Imgproc.circle(mRgba, center, 5, new Scalar(0, 255, 0, 255), -1);
-                    Imgproc.circle(mRgba, center, (int)radius[0], new Scalar(0, 255, 0, 255), 2);
-
                     Point centered = new Point();
                     centered.x = center.x - viewWidth /2;
                     centered.y = -(center.y - viewHeight /2);
@@ -425,6 +487,13 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
 
                     normalised.x = (2*xbcv*centered.x)/viewWidth;
                     normalised.y = (2*ybcv*centered.y)/viewHeight;
+
+                    // TRANSMIT IMMEDIATELY: Fire payload before heavy UI string formatting and matrix drawing begins
+                    sendBallData(normalised.x, normalised.y, detected);
+
+                    // Execute visual HUD renderings post-transmission
+                    Imgproc.circle(mRgba, center, 5, new Scalar(0, 255, 0, 255), -1);
+                    Imgproc.circle(mRgba, center, (int)radius[0], new Scalar(0, 255, 0, 255), 2);
 
                     String axesTextB = String.format("Ball view vector local normalised coords: (%.2f, %.2f)",
                             normalised.x, normalised.y);
@@ -450,11 +519,14 @@ public class ColorBlobDetectionActivity extends CameraActivity implements OnTouc
                     Imgproc.FONT_HERSHEY_SIMPLEX, 0.7, new Scalar(255, 255, 255, 255), 2);
         }
 
-        sendBallData(normalised.x, normalised.y, detected);
+        // If no ball was found or color not selected, still push the 0,0 state to maintain sync
+        if (detected == 0) {
+            sendBallData(normalised.x, normalised.y, detected);
+        }
 
         // HUD overlay displaying real-time manual control status parameters
-        String camera2SettingsHud = String.format("MANUAL CAMERA2 [Tap top to tune] -> Exp: 1/%ds | ISO: %d",
-                mExposureTimeDenominator, mIsoValue);
+        String camera2SettingsHud = String.format("MANUAL CAMERA2 [Tap top to tune, BL to cycle Res] -> Exp: 1/%ds | ISO: %d | Res: %dx%d",
+                mExposureTimeDenominator, mIsoValue, (int)viewWidth, (int)viewHeight);
         Imgproc.putText(mRgba, camera2SettingsHud, new Point(50, 100),
                 Imgproc.FONT_HERSHEY_SIMPLEX, 0.7, new Scalar(0, 165, 255, 255), 2);
 
